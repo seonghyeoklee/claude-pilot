@@ -27,6 +27,8 @@ class AppConfig(BaseModel):
     # Retry
     max_retries: int = 2  # max retry attempts for failed tasks (0=disable)
     retry_backoff_sec: int = 5  # backoff between retries (doubles each attempt)
+    # Context injection
+    context_files: list[str] = []  # files relative to target_project to inject into prompt
 
 
 def load_config(path: Path | None = None) -> AppConfig:

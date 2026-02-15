@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     cost_usd REAL,
     approval_status TEXT DEFAULT '',
     rejection_feedback TEXT DEFAULT '',
-    labels TEXT DEFAULT '[]'
+    labels TEXT DEFAULT '[]',
+    retry_count INTEGER DEFAULT 0
 )
 """
 
@@ -62,6 +63,9 @@ class Database:
         if "branch_name" not in cols:
             await self._db.execute("ALTER TABLE tasks ADD COLUMN branch_name TEXT DEFAULT ''")
             await self._db.execute("ALTER TABLE tasks ADD COLUMN pr_url TEXT DEFAULT ''")
+            await self._db.commit()
+        if "retry_count" not in cols:
+            await self._db.execute("ALTER TABLE tasks ADD COLUMN retry_count INTEGER DEFAULT 0")
             await self._db.commit()
 
     async def close(self) -> None:
@@ -193,6 +197,17 @@ class Database:
             (TaskStatus.DONE.value, now, now, task_id),
         )
         await self._db.commit()
+
+    async def increment_retry_count(self, task_id: int) -> int:
+        """Increment retry_count and return the new value."""
+        now = _now_iso()
+        await self._db.execute(
+            "UPDATE tasks SET retry_count = retry_count + 1, updated_at = ? WHERE id = ?",
+            (now, task_id),
+        )
+        await self._db.commit()
+        task = await self.get_task(task_id)
+        return task.retry_count if task else 0
 
     async def set_task_failed(self, task_id: int, error: str) -> None:
         now = _now_iso()

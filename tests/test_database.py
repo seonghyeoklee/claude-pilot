@@ -242,6 +242,22 @@ async def test_retry_nonexistent(db: Database):
     assert result is None
 
 
+async def test_increment_retry_count(db: Database):
+    t = await db.create_task(TaskCreate(title="Retry count"))
+    assert t.retry_count == 0
+    new_count = await db.increment_retry_count(t.id)
+    assert new_count == 1
+    new_count = await db.increment_retry_count(t.id)
+    assert new_count == 2
+    fetched = await db.get_task(t.id)
+    assert fetched.retry_count == 2
+
+
+async def test_increment_retry_count_nonexistent(db: Database):
+    result = await db.increment_retry_count(9999)
+    assert result == 0
+
+
 # ── Log Persistence Tests ──
 
 

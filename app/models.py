@@ -40,6 +40,7 @@ class Task(BaseModel):
     cost_usd: float | None = None
     approval_status: str = ""
     rejection_feedback: str = ""
+    retry_count: int = 0
     branch_name: str = ""
     pr_url: str = ""
 

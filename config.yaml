@@ -9,3 +9,6 @@ gitflow: true
 branch_prefix: feat
 base_branch: main
 auto_merge: true  # 승인 시 자동 머지
+# Retry on failure
+max_retries: 2
+retry_backoff_sec: 5

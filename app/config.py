@@ -24,6 +24,9 @@ class AppConfig(BaseModel):
     branch_prefix: str = "feat"  # branch naming: {prefix}/task-{id}-{slug}
     base_branch: str = "main"  # PR target branch
     auto_merge: bool = False  # auto-merge PR on approval (requires gh CLI)
+    # Retry
+    max_retries: int = 2  # max retry attempts for failed tasks (0=disable)
+    retry_backoff_sec: int = 5  # backoff between retries (doubles each attempt)
 
 
 def load_config(path: Path | None = None) -> AppConfig:

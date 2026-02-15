@@ -208,10 +208,32 @@ class AgentWorker:
             return
 
         if exit_code != 0:
+            # ── Auto-retry logic ──
+            task = await self.db.get_task(task_id)
+            current_retries = task.retry_count if task else 0
+            if current_retries < self.config.max_retries and not self._stop_requested:
+                new_count = await self.db.increment_retry_count(task_id)
+                backoff = self.config.retry_backoff_sec * (2 ** (new_count - 1))
+                self._add_log(
+                    LogLevel.SYSTEM,
+                    f"Task #{task_id} failed (exit={exit_code}), retrying {new_count}/{self.config.max_retries} after {backoff}s backoff",
+                    task_id,
+                )
+                if self.config.gitflow and branch_name:
+                    await self._cleanup_branch(branch_name, task_id)
+                await asyncio.sleep(backoff)
+                if not self._stop_requested:
+                    await self._execute_task(task_id, title, description)
+                return
+
             self._state = AgentState.IDLE
             self._tasks_failed += 1
             await self.db.set_task_failed(task_id, output[-2000:] if output else "Process failed")
-            self._add_log(LogLevel.ERROR, f"Task #{task_id} failed (exit={exit_code})", task_id)
+            self._add_log(
+                LogLevel.ERROR,
+                f"Task #{task_id} failed (exit={exit_code}) after {current_retries} retries",
+                task_id,
+            )
             if self.config.gitflow and branch_name:
                 await self._cleanup_branch(branch_name, task_id)
             self._current_task_id = None

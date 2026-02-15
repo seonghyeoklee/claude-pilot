@@ -259,8 +259,11 @@ class AgentWorker:
         # Approval gate
         if self.config.auto_approve:
             self._tasks_completed += 1
-            # Gitflow: auto-merge PR
+            # Gitflow: wait for code review, address comments, then merge
             if self.config.gitflow and pr_url and self.config.auto_merge:
+                await self._wait_for_review_and_address(pr_url, branch_name, task_id, title)
+                if self._stop_requested:
+                    return
                 await self._merge_pr(pr_url, task_id)
             await self.db.set_task_done(task_id)
             self._add_log(LogLevel.SYSTEM, f"Task #{task_id} completed (auto-approved)", task_id)
@@ -316,8 +319,9 @@ class AgentWorker:
 
     def _slugify(self, title: str) -> str:
         """Convert task title to branch-safe slug."""
-        slug = re.sub(r"[^a-zA-Z0-9가-힣]+", "-", title).strip("-").lower()
-        return slug[:40]
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", title).strip("-").lower()
+        slug = re.sub(r"-+", "-", slug)
+        return slug[:40].rstrip("-")
 
     async def _create_branch(self, task_id: int, title: str) -> str | None:
         """Checkout base branch, pull, create feature branch. Returns branch name or None on failure."""
@@ -361,6 +365,124 @@ class AgentWorker:
         pr_url = output.strip().split("\n")[-1]
         self._add_log(LogLevel.SYSTEM, f"PR created: {pr_url}", task_id)
         return pr_url
+
+    async def _wait_for_review_and_address(self, pr_url: str, branch_name: str, task_id: int, title: str) -> None:
+        """Wait for CodeRabbit review (max 10min), address comments, then return."""
+        pr_number = pr_url.rstrip("/").split("/")[-1]
+        max_wait = 600  # 10 minutes
+        poll_interval = 30  # check every 30 seconds
+        elapsed = 0
+
+        self._add_log(LogLevel.SYSTEM, f"Waiting for code review on PR #{pr_number} (max {max_wait//60}min)...", task_id)
+
+        review_comments: list[str] = []
+        while elapsed < max_wait:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+            if self._stop_requested:
+                return
+
+            # Fetch review comments via gh API
+            comments = await self._get_review_comments(pr_number, task_id)
+            if comments:
+                review_comments = comments
+                self._add_log(LogLevel.SYSTEM, f"Found {len(comments)} review comment(s) after {elapsed}s", task_id)
+                break
+
+            if elapsed % 60 == 0:
+                self._add_log(LogLevel.SYSTEM, f"Still waiting for review... ({elapsed}s/{max_wait}s)", task_id)
+
+        if not review_comments:
+            self._add_log(LogLevel.SYSTEM, "No review comments received, proceeding to merge", task_id)
+            return
+
+        # Address review comments (max 2 rounds)
+        for round_num in range(1, 3):
+            self._add_log(LogLevel.SYSTEM, f"Addressing review comments (round {round_num}): {len(review_comments)} comment(s)", task_id)
+
+            # Build prompt from review comments
+            review_prompt = self._build_review_prompt(title, review_comments, round_num)
+            exit_code, output, cost = await self._run_claude(review_prompt, task_id)
+
+            if exit_code != 0:
+                self._add_log(LogLevel.ERROR, f"Review fix failed (exit={exit_code}), skipping", task_id)
+                break
+
+            # Commit and push fixes
+            await self._git("add", "-A", task_id=task_id)
+            rc, diff_stat = await self._git("diff", "--cached", "--stat", task_id=task_id)
+            if diff_stat:
+                await self._git("commit", "-m", f"[Task #{task_id}] Address review comments (round {round_num})", task_id=task_id)
+                await self._git("push", "origin", branch_name, task_id=task_id)
+                self._add_log(LogLevel.SYSTEM, f"Pushed review fixes (round {round_num})", task_id)
+            else:
+                self._add_log(LogLevel.SYSTEM, "No changes from review fix, skipping", task_id)
+                break
+
+            # Wait briefly for new review comments on the fix
+            if round_num < 2:
+                self._add_log(LogLevel.SYSTEM, "Waiting 60s for follow-up review...", task_id)
+                await asyncio.sleep(60)
+                if self._stop_requested:
+                    return
+                new_comments = await self._get_review_comments(pr_number, task_id)
+                # Only continue if there are NEW comments (more than before)
+                if not new_comments or len(new_comments) <= len(review_comments):
+                    self._add_log(LogLevel.SYSTEM, "No new review comments, done addressing", task_id)
+                    break
+                review_comments = new_comments
+
+    async def _get_review_comments(self, pr_number: str, task_id: int) -> list[str]:
+        """Fetch review comments from PR via gh CLI. Returns list of comment bodies."""
+        proc = await asyncio.create_subprocess_exec(
+            "gh", "pr", "view", pr_number, "--json", "comments,reviews",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=self.config.target_project,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace").strip()
+        if proc.returncode != 0:
+            return []
+
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            return []
+
+        comments: list[str] = []
+        # PR-level comments (from bots like CodeRabbit)
+        for c in data.get("comments", []):
+            body = c.get("body", "")
+            author = c.get("author", {}).get("login", "")
+            # Filter for bot review comments (CodeRabbit, etc.)
+            if body and ("coderabbit" in author.lower() or "actionable" in body.lower() or "suggestion" in body.lower() or "issue" in body.lower()):
+                comments.append(f"[{author}]: {body}")
+
+        # Review comments (inline code comments)
+        for r in data.get("reviews", []):
+            body = r.get("body", "")
+            author = r.get("author", {}).get("login", "")
+            if body and body.strip():
+                comments.append(f"[{author} review]: {body}")
+
+        return comments
+
+    def _build_review_prompt(self, title: str, comments: list[str], round_num: int) -> str:
+        """Build a prompt for Claude to address review comments."""
+        comments_text = "\n\n---\n\n".join(comments)
+        return (
+            f"A code review was submitted for the changes in task: {title}\n\n"
+            f"## Review Comments (round {round_num})\n\n{comments_text}\n\n"
+            f"## Instructions\n"
+            f"Read the review comments above carefully. For each comment:\n"
+            f"1. If it's a valid suggestion/bug/improvement → fix the code\n"
+            f"2. If it's a nitpick about style/naming → fix it if easy\n"
+            f"3. If it's a question or praise → ignore (no action needed)\n"
+            f"4. If it's about missing tests → add the tests\n\n"
+            f"Make minimal, focused changes to address the review feedback. Do NOT refactor unrelated code.\n"
+            f"Run the existing tests to make sure nothing breaks."
+        )
 
     async def _merge_pr(self, pr_url: str, task_id: int) -> bool:
         """Merge PR via gh CLI."""

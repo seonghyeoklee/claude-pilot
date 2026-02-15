@@ -1,6 +1,6 @@
 target_project: /Users/woody/recruit/claude-pilot
 claude_command: claude
-auto_approve: false
+auto_approve: true
 poll_interval: 5
 claude_model: null
 claude_max_budget: null

@@ -40,9 +40,13 @@ def test_status_dot(html):
     assert "status-dot" in html
 
 
-def test_backlog_section(html):
+def test_kanban_board(html):
+    assert 'id="kanbanBoard"' in html
+    assert "kanban" in html
     assert "Backlog" in html
-    assert 'id="taskList"' in html
+    assert "In Progress" in html
+    assert "Review" in html
+    assert "Done" in html
 
 
 def test_add_form(html):
@@ -52,29 +56,45 @@ def test_add_form(html):
     assert 'id="addPriority"' in html
 
 
-def test_log_area(html):
-    assert 'id="logArea"' in html
-    assert "log-area" in html
+def test_slide_panel_structure(html):
+    assert 'id="slidePanel"' in html
+    assert 'id="slideOverlay"' in html
+    assert "slide-panel" in html
+    assert 'id="spLeft"' in html
+    assert 'id="spLogArea"' in html
 
 
-def test_approval_panel(html):
-    assert 'id="approvalPanel"' in html
-    assert "Approval Gate" in html
+def test_slide_panel_two_column(html):
+    assert "sp-left" in html
+    assert "sp-right" in html
+    assert "sp-content" in html
 
 
-def test_approval_actions(html):
+def test_slide_panel_close(html):
+    assert "closePanel()" in html
+    assert "Escape" in html
+
+
+def test_task_log_in_panel(html):
+    assert "Execution Log" in html
+    assert 'id="spLogArea"' in html
+    assert 'id="spLogCount"' in html
+    assert "appendTaskLog" in html
+    assert "renderTaskLog" in html
+    assert "taskLogs" in html
+
+
+def test_approval_in_slide(html):
     assert "approveTask()" in html
     assert "rejectTask()" in html
-
-
-def test_feedback_input(html):
-    assert 'id="feedbackInput"' in html
+    assert "Approval Gate" in html
+    assert "feedbackInput" in html
 
 
 def test_sse_connection(html):
     assert "EventSource" in html
     assert "/api/agent/logs" in html
-    assert "ensureSSE()" in html  # auto-connect on load
+    assert "ensureSSE()" in html
 
 
 def test_api_polling(html):
@@ -87,12 +107,6 @@ def test_stats_display(html):
     assert 'id="statFailed"' in html
 
 
-def test_detail_panel(html):
-    assert 'id="detailPanel"' in html
-    assert 'id="detailGrid"' in html
-    assert 'id="detailOutput"' in html
-
-
 def test_toast(html):
     assert 'id="toast"' in html
     assert "showToast" in html
@@ -102,5 +116,121 @@ def test_task_elapsed_time(html):
     assert "getElapsed" in html
 
 
-def test_clear_log_button(html):
-    assert "clearLog()" in html
+def test_auto_open_approval(html):
+    assert "waiting_approval" in html
+    assert "openPanel" in html
+
+
+def test_status_badges(html):
+    assert "status-badge" in html
+    assert "status-pending" in html
+    assert "status-done" in html
+
+
+def test_panel_width(html):
+    assert "width: 700px" in html
+
+
+# ── Label Tests ──
+
+
+def test_label_badge_css(html):
+    assert "label-badge" in html
+    assert "label-filter-chip" in html
+
+
+def test_label_input_in_form(html):
+    assert 'id="addLabels"' in html
+    assert "Labels" in html
+
+
+def test_label_filter_bar(html):
+    assert 'id="labelFilterBar"' in html
+    assert "renderLabelFilter" in html
+    assert "toggleLabelFilter" in html
+
+
+def test_label_badges_in_card(html):
+    assert "labelBadges" in html
+    assert "k-card-labels" in html
+
+
+def test_label_in_slide_panel(html):
+    assert "t.labels" in html
+
+
+# ── Search Tests ──
+
+
+def test_search_input(html):
+    assert 'id="searchInput"' in html
+    assert "onSearchInput()" in html
+
+
+def test_search_debounce(html):
+    assert "searchTimer" in html
+    assert "setTimeout" in html
+    assert "300" in html
+
+
+def test_search_query_param(html):
+    assert "baseParams.set('q', searchQuery)" in html
+
+
+# ── Retry Tests ──
+
+
+def test_retry_function(html):
+    assert "retryTask" in html
+    assert "/retry" in html
+
+
+def test_delete_confirm(html):
+    assert "confirm(" in html
+
+
+def test_log_expand_button(html):
+    assert 'id="spLogExpandBtn"' in html
+    assert "toggleLogExpand" in html
+    assert "log-expanded" in html
+
+
+def test_log_history_load(html):
+    assert "/logs" in html
+    assert "api/tasks/" in html
+
+
+# ── Status Filter Tab Tests ──
+
+
+def test_status_filter_bar(html):
+    assert 'id="statusFilterBar"' in html
+    assert "status-filter-bar" in html
+
+
+def test_status_tab_css(html):
+    assert ".status-tab" in html
+    assert ".tab-count" in html
+
+
+def test_status_tabs_defined(html):
+    assert "STATUS_TABS" in html
+    assert "renderStatusTabs" in html
+    assert "setStatusFilter" in html
+
+
+def test_status_filter_options(html):
+    assert "'all'" in html
+    assert "'pending'" in html
+    assert "'in_progress'" in html
+    assert "'done'" in html
+    assert "'failed'" in html
+
+
+def test_status_filter_localstorage(html):
+    assert "localStorage.getItem('statusFilter')" in html
+    assert "localStorage.setItem('statusFilter'" in html
+
+
+def test_status_filter_api_call(html):
+    assert "params.set('status', activeStatusFilter)" in html

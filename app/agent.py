@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections import deque
 
 from app.config import AppConfig
@@ -40,6 +41,7 @@ class AgentWorker:
         self._current_output: str = ""
         self._stop_requested = False
         self._proc: asyncio.subprocess.Process | None = None
+        self._min_priority: int = 0  # 0=all, 1=Med+, 2=High+, 3=Urgent only
 
     # ── Status ──
 
@@ -62,24 +64,35 @@ class AgentWorker:
     # ── Logging ──
 
     def _add_log(self, level: LogLevel, message: str, task_id: int | None = None) -> None:
+        ts = _now_iso()
         entry = LogEntry(
             index=self._log_index,
-            timestamp=_now_iso(),
+            timestamp=ts,
             level=level,
             message=message,
             task_id=task_id,
         )
         self._logs.append(entry)
         self._log_index += 1
+        # Persist to DB (fire-and-forget)
+        if task_id is not None:
+            try:
+                asyncio.get_event_loop().create_task(
+                    self.db.insert_log(task_id, ts, level.value, message)
+                )
+            except Exception:
+                pass  # never block on log persistence
 
     # ── Loop Control ──
 
-    async def start_loop(self) -> None:
+    async def start_loop(self, min_priority: int = 0) -> None:
         if self._loop_task and not self._loop_task.done():
             return
         self._stop_requested = False
+        self._min_priority = min_priority
         self._state = AgentState.IDLE
-        self._add_log(LogLevel.SYSTEM, "Agent loop started")
+        pri_label = {0:"All", 1:"Medium+", 2:"High+", 3:"Urgent"}
+        self._add_log(LogLevel.SYSTEM, f"Agent loop started (priority: {pri_label.get(min_priority, min_priority)})")
         self._loop_task = asyncio.create_task(self._run_loop())
 
     async def stop_loop(self) -> None:
@@ -137,7 +150,7 @@ class AgentWorker:
     async def _run_loop(self) -> None:
         try:
             while not self._stop_requested:
-                task = await self.db.pick_next_pending()
+                task = await self.db.pick_next_pending(min_priority=self._min_priority)
                 if not task:
                     self._state = AgentState.IDLE
                     await asyncio.sleep(self.config.poll_interval)
@@ -156,7 +169,20 @@ class AgentWorker:
         self._current_output = ""
         self._state = AgentState.RUNNING
 
-        await self.db.set_task_started(task_id)
+        branch_name = ""
+
+        # ── Gitflow: create feature branch ──
+        if self.config.gitflow:
+            branch_name = await self._create_branch(task_id, title) or ""
+            if not branch_name:
+                self._tasks_failed += 1
+                await self.db.set_task_failed(task_id, "Failed to create feature branch")
+                self._state = AgentState.IDLE
+                self._current_task_id = None
+                self._current_task_title = None
+                return
+
+        await self.db.set_task_started(task_id, branch_name=branch_name)
         self._add_log(LogLevel.SYSTEM, f"Starting task #{task_id}: {title}", task_id)
         logger.info("Starting task #%d: %s", task_id, title)
 
@@ -168,6 +194,8 @@ class AgentWorker:
             self._tasks_failed += 1
             await self.db.set_task_failed(task_id, str(exc)[:2000])
             self._add_log(LogLevel.ERROR, f"Task #{task_id} crashed: {exc}", task_id)
+            if self.config.gitflow and branch_name:
+                await self._cleanup_branch(branch_name, task_id)
             self._state = AgentState.IDLE
             self._current_task_id = None
             self._current_task_title = None
@@ -184,13 +212,32 @@ class AgentWorker:
             self._tasks_failed += 1
             await self.db.set_task_failed(task_id, output[-2000:] if output else "Process failed")
             self._add_log(LogLevel.ERROR, f"Task #{task_id} failed (exit={exit_code})", task_id)
+            if self.config.gitflow and branch_name:
+                await self._cleanup_branch(branch_name, task_id)
             self._current_task_id = None
             self._current_task_title = None
             return
 
+        # ── Gitflow: commit + push + create PR ──
+        pr_url = ""
+        if self.config.gitflow and branch_name:
+            await self._git("add", "-A", task_id=task_id)
+            rc, diff_stat = await self._git("diff", "--cached", "--stat", task_id=task_id)
+            if diff_stat:
+                await self._git("commit", "-m", f"[Task #{task_id}] {title}", task_id=task_id)
+                await self._git("push", "-u", "origin", branch_name, task_id=task_id)
+                pr_url = await self._create_pr(task_id, title, branch_name) or ""
+                if pr_url:
+                    await self.db.set_task_pr(task_id, pr_url)
+            else:
+                self._add_log(LogLevel.SYSTEM, "No changes to commit", task_id)
+
         # Approval gate
         if self.config.auto_approve:
             self._tasks_completed += 1
+            # Gitflow: auto-merge PR
+            if self.config.gitflow and pr_url and self.config.auto_merge:
+                await self._merge_pr(pr_url, task_id)
             await self.db.set_task_done(task_id)
             self._add_log(LogLevel.SYSTEM, f"Task #{task_id} completed (auto-approved)", task_id)
         else:
@@ -208,16 +255,112 @@ class AgentWorker:
 
             if self._approved:
                 self._tasks_completed += 1
+                # Gitflow: merge PR on approval
+                if self.config.gitflow and pr_url:
+                    merged = await self._merge_pr(pr_url, task_id)
+                    if not merged:
+                        self._add_log(LogLevel.ERROR, "PR merge failed — resolve conflicts manually", task_id)
                 await self.db.set_task_done(task_id)
                 self._add_log(LogLevel.SYSTEM, f"Task #{task_id} approved", task_id)
             else:
                 self._tasks_failed += 1
                 await self.db.set_task_rejected(task_id, self._rejection_feedback)
                 self._add_log(LogLevel.SYSTEM, f"Task #{task_id} rejected: {self._rejection_feedback}", task_id)
+                # Gitflow: cleanup branch on rejection
+                if self.config.gitflow and branch_name:
+                    await self._cleanup_branch(branch_name, task_id)
 
         self._state = AgentState.IDLE
         self._current_task_id = None
         self._current_task_title = None
+
+    # ── Git Helpers ──
+
+    async def _git(self, *args: str, task_id: int | None = None) -> tuple[int, str]:
+        """Run git command in target_project directory."""
+        proc = await asyncio.create_subprocess_exec(
+            "git", *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=self.config.target_project,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace").strip()
+        if proc.returncode != 0 and task_id:
+            self._add_log(LogLevel.ERROR, f"git {args[0]} failed: {output}", task_id)
+        return proc.returncode, output
+
+    def _slugify(self, title: str) -> str:
+        """Convert task title to branch-safe slug."""
+        slug = re.sub(r"[^a-zA-Z0-9가-힣]+", "-", title).strip("-").lower()
+        return slug[:40]
+
+    async def _create_branch(self, task_id: int, title: str) -> str | None:
+        """Checkout base branch, pull, create feature branch. Returns branch name or None on failure."""
+        base = self.config.base_branch
+        prefix = self.config.branch_prefix
+        slug = self._slugify(title)
+        branch = f"{prefix}/task-{task_id}-{slug}"
+
+        # Checkout base and pull latest
+        rc, _ = await self._git("checkout", base, task_id=task_id)
+        if rc != 0:
+            return None
+        await self._git("pull", "--ff-only", task_id=task_id)
+
+        # Create and checkout feature branch
+        rc, _ = await self._git("checkout", "-b", branch, task_id=task_id)
+        if rc != 0:
+            return None
+
+        self._add_log(LogLevel.SYSTEM, f"Created branch: {branch}", task_id)
+        return branch
+
+    async def _create_pr(self, task_id: int, title: str, branch: str) -> str | None:
+        """Create PR via gh CLI. Returns PR URL or None."""
+        proc = await asyncio.create_subprocess_exec(
+            "gh", "pr", "create",
+            "--title", f"[Task #{task_id}] {title}",
+            "--body", f"Auto-generated PR for Task #{task_id}.\n\nBranch: `{branch}`",
+            "--base", self.config.base_branch,
+            "--head", branch,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=self.config.target_project,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace").strip()
+        if proc.returncode != 0:
+            self._add_log(LogLevel.ERROR, f"gh pr create failed: {output}", task_id)
+            return None
+        # gh pr create outputs the PR URL
+        pr_url = output.strip().split("\n")[-1]
+        self._add_log(LogLevel.SYSTEM, f"PR created: {pr_url}", task_id)
+        return pr_url
+
+    async def _merge_pr(self, pr_url: str, task_id: int) -> bool:
+        """Merge PR via gh CLI."""
+        proc = await asyncio.create_subprocess_exec(
+            "gh", "pr", "merge", pr_url, "--merge", "--delete-branch",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=self.config.target_project,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace").strip()
+        if proc.returncode != 0:
+            self._add_log(LogLevel.ERROR, f"gh pr merge failed: {output}", task_id)
+            return False
+        self._add_log(LogLevel.SYSTEM, f"PR merged: {pr_url}", task_id)
+        # Return to base branch
+        await self._git("checkout", self.config.base_branch, task_id=task_id)
+        await self._git("pull", "--ff-only", task_id=task_id)
+        return True
+
+    async def _cleanup_branch(self, branch: str, task_id: int) -> None:
+        """Return to base branch on failure."""
+        await self._git("checkout", self.config.base_branch, task_id=task_id)
+        await self._git("branch", "-D", branch, task_id=task_id)
 
     def _build_prompt(self, title: str, description: str) -> str:
         parts = [title]
@@ -246,6 +389,7 @@ class AgentWorker:
                 stderr=asyncio.subprocess.STDOUT,  # merge stderr → stdout (prevent deadlock)
                 cwd=self.config.target_project,
                 env=env,
+                limit=4 * 1024 * 1024,  # 4MB line buffer (default 64KB too small for large stream-json)
             )
         except FileNotFoundError:
             self._add_log(LogLevel.ERROR, f"claude command not found: {self.config.claude_command}", task_id)
@@ -327,6 +471,16 @@ class AgentWorker:
             proc.kill()
             self._add_log(LogLevel.ERROR, "Claude process timed out (10min)", task_id)
             return 1, "timeout", cost
+        except asyncio.LimitOverrunError:
+            # Stream line exceeded buffer limit — drain and continue
+            self._add_log(LogLevel.ERROR, "Stream buffer overflow (line too long), draining...", task_id)
+            if proc.stdout:
+                try:
+                    await proc.stdout.read()  # drain remaining data
+                except Exception:
+                    pass
+            proc.kill()
+            return 1, "stream buffer overflow", cost
         except asyncio.CancelledError:
             proc.kill()
             return 1, "cancelled", cost

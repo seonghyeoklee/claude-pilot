@@ -1,4 +1,4 @@
-"""대시보드 HTML 빌더"""
+"""대시보드 HTML 빌더 — 칸반 보드 + 와이드 슬라이드 패널"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ _EXTRA_CSS = """
 /* Layout */
 .top-bar {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 16px 24px; background: #1a1d27; border-radius: 12px; margin-bottom: 20px;
+    padding: 14px 24px; background: #1a1d27; border-radius: 12px; margin-bottom: 16px;
 }
 .top-bar h1 { font-size: 22px; color: #fff; }
 .status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-left: 8px; }
@@ -30,27 +30,52 @@ _EXTRA_CSS = """
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-sm { padding: 4px 10px; font-size: 11px; }
 
-/* Main Grid */
-.main-grid {
-    display: grid; grid-template-columns: 380px 1fr; gap: 20px; min-height: calc(100vh - 200px);
-}
-@media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+.stats-bar { display: flex; gap: 10px; }
+.stat-chip { background: #252830; border-radius: 8px; padding: 6px 14px; font-size: 12px; }
+.stat-chip span { font-weight: 700; }
 
-/* Backlog Panel */
-.backlog { background: #1a1d27; border-radius: 12px; padding: 20px; overflow-y: auto; max-height: calc(100vh - 180px); }
-.backlog h2 { font-size: 16px; color: #fff; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-.task-item {
-    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-    background: #252830; border-radius: 8px; margin-bottom: 6px; cursor: pointer;
-    transition: background 0.15s;
+/* ── Kanban Board ── */
+.kanban {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 16px; min-height: 280px;
 }
-.task-item:hover { background: #2d3040; }
-.task-item.selected { background: #2d3040; border-left: 3px solid #3b82f6; }
-.task-id { color: #666; font-size: 12px; min-width: 28px; }
-.task-title { flex: 1; font-size: 13px; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.task-status { font-size: 14px; min-width: 22px; text-align: center; }
-.task-meta { font-size: 10px; color: #555; white-space: nowrap; }
-.task-actions { display: flex; gap: 4px; }
+@media (max-width: 1100px) { .kanban { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .kanban { grid-template-columns: 1fr; } }
+
+.kanban-col {
+    background: #13151c; border-radius: 12px; padding: 14px; display: flex; flex-direction: column;
+    min-height: 180px; max-height: calc(100vh - 340px); overflow-y: auto;
+}
+.kanban-col.col-pending { border-top: 3px solid #3b82f6; }
+.kanban-col.col-in_progress { border-top: 3px solid #a78bfa; }
+.kanban-col.col-waiting_approval { border-top: 3px solid #f59e0b; }
+.kanban-col.col-done { border-top: 3px solid #22c55e; }
+.kanban-col.col-failed { border-top: 3px solid #ef4444; }
+
+.col-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #252830;
+}
+.col-title { font-size: 13px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+.col-count {
+    font-size: 11px; font-weight: 700; background: #252830; color: #888;
+    padding: 2px 8px; border-radius: 10px; min-width: 20px; text-align: center;
+}
+.col-empty { color: #333; font-size: 12px; text-align: center; padding: 24px 0; font-style: italic; }
+
+/* Kanban Card */
+.k-card {
+    background: #1a1d27; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+    cursor: pointer; transition: background 0.15s, box-shadow 0.15s; border: 1px solid transparent;
+}
+.k-card:hover { background: #22252f; border-color: #333; }
+.k-card.selected { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+.k-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.k-card-id { color: #555; font-size: 11px; }
+.k-card-title { font-size: 13px; color: #e0e0e0; line-height: 1.4; word-break: break-word; }
+.k-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+.k-card-meta { font-size: 10px; color: #555; }
+.k-card-actions { display: flex; gap: 4px; }
 
 .priority-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700; }
 .priority-0 { background: #374151; color: #9ca3af; }
@@ -58,68 +83,199 @@ _EXTRA_CSS = """
 .priority-2 { background: rgba(245,158,11,0.15); color: #fbbf24; }
 .priority-3 { background: rgba(239,68,68,0.15); color: #f87171; }
 
+.label-badge {
+    display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 3px;
+    font-weight: 600; background: rgba(139,92,246,0.15); color: #a78bfa; margin-right: 3px; margin-top: 3px;
+}
+.label-filter-bar {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.label-filter-chip {
+    font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+    background: #252830; color: #888; border: 1px solid #374151; transition: 0.15s;
+}
+.label-filter-chip:hover { border-color: #a78bfa; color: #a78bfa; }
+.label-filter-chip.active { background: rgba(139,92,246,0.15); color: #a78bfa; border-color: #a78bfa; }
+
+/* Status filter tabs */
+.status-filter-bar {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 12px;
+}
+.status-tab {
+    font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+    background: #1a1d27; color: #888; border: 1px solid transparent; transition: 0.15s;
+    display: flex; align-items: center; gap: 6px; font-weight: 600;
+}
+.status-tab:hover { background: #22252f; color: #ccc; }
+.status-tab.active { background: #252830; color: #e0e0e0; border-color: #3b82f6; }
+.status-tab .tab-count {
+    font-size: 10px; font-weight: 700; background: #374151; color: #888;
+    padding: 1px 7px; border-radius: 10px; min-width: 18px; text-align: center;
+}
+.status-tab.active .tab-count { background: rgba(59,130,246,0.2); color: #60a5fa; }
+
+/* Search bar */
+.search-bar {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+}
+.search-bar input {
+    background: #252830; border: 1px solid #374151; border-radius: 8px; padding: 8px 14px;
+    color: #e0e0e0; font-size: 13px; font-family: inherit; width: 300px;
+}
+.search-bar input::placeholder { color: #555; }
+.search-bar input:focus { outline: none; border-color: #3b82f6; }
+
 /* Add task form */
-.add-form { display: none; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-.add-form.visible { display: flex; }
+.add-form { display: none; gap: 8px; margin-bottom: 12px; padding: 14px; background: #1a1d27; border-radius: 10px; }
+.add-form.visible { display: flex; flex-wrap: wrap; }
 .add-form input, .add-form textarea {
     background: #252830; border: 1px solid #374151; border-radius: 8px; padding: 8px 12px;
     color: #e0e0e0; font-size: 13px; font-family: inherit;
 }
+.add-form input { flex: 1; min-width: 200px; }
 .add-form input::placeholder, .add-form textarea::placeholder { color: #555; }
 .add-form input:focus, .add-form textarea:focus { outline: none; border-color: #3b82f6; }
-.add-form textarea { resize: vertical; min-height: 60px; }
-.add-form .form-row { display: flex; gap: 8px; }
+.add-form textarea { resize: vertical; min-height: 50px; width: 100%; }
+.add-form .form-row { display: flex; gap: 8px; width: 100%; }
 
-/* Right Panel */
-.right-panel { display: flex; flex-direction: column; gap: 16px; }
-
-/* Log Panel */
-.log-panel { background: #1a1d27; border-radius: 12px; padding: 20px; flex: 1; display: flex; flex-direction: column; }
-.log-panel h2 { font-size: 16px; color: #fff; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-.log-area {
-    flex: 1; background: #0d0f14; border-radius: 8px; padding: 12px;
-    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.6;
-    overflow-y: auto; max-height: 600px; min-height: 350px;
+/* ── Slide Panel (와이드) ── */
+.slide-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 900;
+    opacity: 0; pointer-events: none; transition: opacity 0.25s;
 }
-.log-line { margin-bottom: 2px; word-break: break-all; }
-.log-time { color: #555; }
-.log-SYS { color: #60a5fa; }
-.log-CLAUDE { color: #a78bfa; }
-.log-TOOL { color: #fbbf24; }
-.log-RESULT { color: #22c55e; }
-.log-ERROR { color: #ef4444; }
-.log-empty { color: #555; font-style: italic; padding: 20px; text-align: center; }
+.slide-overlay.open { opacity: 1; pointer-events: auto; }
 
-/* Approval Panel */
-.approval-panel {
-    background: #1a1d27; border-radius: 12px; padding: 20px;
-    border: 2px solid transparent; transition: border-color 0.3s;
+.slide-panel {
+    position: fixed; top: 0; right: 0; width: 700px; height: 100vh; z-index: 910;
+    background: #13151c; border-left: 1px solid #252830;
+    transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.16,1,0.3,1);
+    display: flex; flex-direction: column; overflow: hidden;
 }
-.approval-panel.active { border-color: #f59e0b; }
-.approval-panel h2 { font-size: 16px; color: #fff; margin-bottom: 12px; }
-.approval-info { color: #aaa; font-size: 13px; margin-bottom: 12px; }
-.approval-actions { display: flex; gap: 12px; align-items: center; }
-.feedback-input { flex: 1; background: #252830; border: 1px solid #374151; border-radius: 8px; padding: 8px 12px; color: #e0e0e0; font-size: 13px; }
-.feedback-input:focus { outline: none; border-color: #f59e0b; }
+.slide-panel.open { transform: translateX(0); }
+.slide-panel.resizing { transition: none; }
+@media (max-width: 900px) { .slide-panel { width: 100vw !important; } }
 
-/* Detail Panel */
-.detail-panel { background: #1a1d27; border-radius: 12px; padding: 20px; display: none; }
-.detail-panel.visible { display: block; }
-.detail-panel h2 { font-size: 16px; color: #fff; margin-bottom: 12px; }
-.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.detail-card { background: #252830; border-radius: 8px; padding: 10px 14px; }
-.detail-card .label { font-size: 11px; color: #666; margin-bottom: 4px; }
-.detail-card .value { font-size: 14px; font-weight: 600; color: #e0e0e0; }
-.detail-output {
+/* Resize handle (outer panel edge) */
+.sp-resize {
+    position: absolute; top: 0; left: -5px; width: 10px; height: 100%; cursor: col-resize; z-index: 920;
+}
+.sp-resize::after {
+    content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 4px; height: 48px; border-radius: 2px; background: #333; opacity: 0; transition: opacity 0.2s;
+}
+.sp-resize:hover::after, .sp-resize.active::after { opacity: 1; background: #3b82f6; }
+.sp-resize::before {
+    content: '\u2261'; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    color: #555; font-size: 16px; opacity: 0; transition: opacity 0.2s;
+}
+.sp-resize:hover::before, .sp-resize.active::before { opacity: 0; }
+
+.sp-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 20px 28px 16px; border-bottom: 1px solid #252830; flex-shrink: 0;
+}
+.sp-title-area { flex: 1; }
+.sp-title-area h2 { font-size: 18px; color: #fff; margin: 0 0 6px 0; line-height: 1.4; word-break: break-word; }
+.sp-title-meta { display: flex; gap: 8px; align-items: center; }
+.sp-close {
+    background: none; border: none; color: #666; font-size: 24px; cursor: pointer;
+    padding: 0 0 0 16px; line-height: 1; transition: color 0.15s; flex-shrink: 0;
+}
+.sp-close:hover { color: #fff; }
+
+.sp-body { flex: 1; overflow-y: auto; padding: 0; display: flex; flex-direction: column; }
+
+/* Two-column layout inside panel */
+.sp-content { display: flex; flex: 1; min-height: 0; }
+.sp-left { flex: 1; padding: 20px 28px; overflow-y: auto; min-width: 200px; }
+.sp-right { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; min-width: 180px; }
+
+/* Inner column divider (resizable) */
+.sp-divider {
+    width: 6px; flex-shrink: 0; cursor: col-resize; background: #1e2030; position: relative;
+    transition: background 0.15s;
+}
+.sp-divider:hover, .sp-divider.active { background: #3b82f6; }
+.sp-divider::after {
+    content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 2px; height: 32px; border-radius: 1px; background: #444;
+}
+.sp-divider:hover::after, .sp-divider.active::after { background: #fff; }
+
+@media (max-width: 700px) {
+    .sp-content { flex-direction: column; }
+    .sp-left { border-right: none; border-bottom: 1px solid #1e2030; }
+    .sp-right { width: 100% !important; height: 300px; }
+    .sp-divider { display: none; }
+}
+
+.sp-section { margin-bottom: 20px; }
+.sp-section-title {
+    font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px;
+}
+
+.sp-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sp-meta-item { background: #1a1d27; border-radius: 8px; padding: 10px 12px; }
+.sp-meta-item .label { font-size: 10px; color: #666; margin-bottom: 3px; }
+.sp-meta-item .value { font-size: 13px; font-weight: 600; color: #e0e0e0; }
+
+.sp-desc {
+    background: #1a1d27; border-radius: 8px; padding: 14px; color: #ccc; font-size: 13px;
+    line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+}
+
+.sp-output {
     background: #0d0f14; border-radius: 8px; padding: 12px;
-    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.5;
-    max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: #aaa;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; line-height: 1.5;
+    max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: #aaa;
 }
 
-/* Stats bar */
-.stats-bar { display: flex; gap: 12px; }
-.stat-chip { background: #252830; border-radius: 8px; padding: 6px 14px; font-size: 12px; }
-.stat-chip span { font-weight: 700; }
+.sp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Approval inside slide panel */
+.sp-approval {
+    background: #1a1d27; border-radius: 10px; padding: 14px;
+    border: 2px solid #f59e0b;
+}
+.sp-approval-title { font-size: 13px; font-weight: 700; color: #f59e0b; margin-bottom: 10px; }
+.sp-approval-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.sp-approval .feedback-input {
+    flex: 1; min-width: 120px; background: #252830; border: 1px solid #374151; border-radius: 8px;
+    padding: 8px 12px; color: #e0e0e0; font-size: 13px;
+}
+.sp-approval .feedback-input:focus { outline: none; border-color: #f59e0b; }
+
+/* Task log inside slide panel (right column) */
+.sp-log-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px 10px; flex-shrink: 0; border-bottom: 1px solid #1e2030;
+}
+.sp-log-header h3 { font-size: 13px; font-weight: 700; color: #aaa; margin: 0; }
+.sp-log-header-actions { display: flex; gap: 6px; align-items: center; }
+.sp-log-expand-btn {
+    background: none; border: 1px solid #374151; border-radius: 6px; color: #888;
+    font-size: 14px; width: 28px; height: 28px; cursor: pointer; transition: 0.15s;
+    display: flex; align-items: center; justify-content: center;
+}
+.sp-log-expand-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+.sp-log-area {
+    flex: 1; background: #0d0f14; padding: 12px; overflow-y: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; line-height: 1.6;
+}
+.sp-log-empty { color: #333; font-style: italic; text-align: center; padding: 40px 12px; font-size: 12px; }
+
+/* Expanded log mode: hide left column, log fills entire panel */
+.sp-content.log-expanded .sp-left { display: none; }
+.sp-content.log-expanded .sp-divider { display: none; }
+.sp-content.log-expanded .sp-right { width: 100% !important; flex: 1; }
+
+.status-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.status-pending { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.status-in_progress { background: rgba(167,139,250,0.15); color: #a78bfa; }
+.status-waiting_approval { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.status-done { background: rgba(34,197,94,0.15); color: #22c55e; }
+.status-failed { background: rgba(239,68,68,0.15); color: #f87171; }
 
 /* Toast */
 .toast {
@@ -144,101 +300,259 @@ _BODY = """
                 <div class="stat-chip">Done: <span id="statDone" class="positive">0</span></div>
                 <div class="stat-chip">Failed: <span id="statFailed" class="negative">0</span></div>
             </div>
+            <button class="btn btn-blue btn-sm" onclick="toggleAddForm()">+ Add</button>
+            <select id="minPriority" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;">
+                <option value="0">All</option>
+                <option value="1">Medium+</option>
+                <option value="2" selected>High+</option>
+                <option value="3">Urgent</option>
+            </select>
             <button class="btn btn-green" id="btnStart" onclick="agentStart()">Start</button>
             <button class="btn btn-red" id="btnStop" onclick="agentStop()" disabled>Stop</button>
         </div>
     </div>
 
-    <div class="main-grid">
-        <div class="backlog">
-            <h2>
-                Backlog
-                <button class="btn btn-blue btn-sm" onclick="toggleAddForm()">+ Add</button>
-            </h2>
-            <div class="add-form" id="addForm">
-                <input id="addTitle" placeholder="Task title..." onkeydown="if(event.key==='Enter')addTask()">
-                <textarea id="addDesc" placeholder="Description (optional)..." rows="2"></textarea>
-                <div class="form-row">
-                    <select id="addPriority" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;">
-                        <option value="0">Low</option>
-                        <option value="1" selected>Medium</option>
-                        <option value="2">High</option>
-                        <option value="3">Urgent</option>
-                    </select>
-                    <button class="btn btn-blue btn-sm" onclick="addTask()">Add Task</button>
-                </div>
-            </div>
-            <div id="taskList"></div>
+    <div class="add-form" id="addForm">
+        <input id="addTitle" placeholder="Task title..." onkeydown="if(event.key==='Enter')addTask()">
+        <div class="form-row">
+            <textarea id="addDesc" placeholder="Description (optional)..." rows="2"></textarea>
         </div>
+        <div class="form-row">
+            <input id="addLabels" placeholder="Labels (comma-separated)..." style="flex:1;min-width:150px;">
+        </div>
+        <div class="form-row">
+            <select id="addPriority" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;">
+                <option value="0">Low</option>
+                <option value="1" selected>Medium</option>
+                <option value="2">High</option>
+                <option value="3">Urgent</option>
+            </select>
+            <button class="btn btn-blue btn-sm" onclick="addTask()">Add Task</button>
+            <button class="btn btn-gray btn-sm" onclick="toggleAddForm()">Cancel</button>
+        </div>
+    </div>
 
-        <div class="right-panel">
-            <div class="detail-panel" id="detailPanel">
-                <h2 id="detailTitle">Task Detail</h2>
-                <div class="detail-grid" id="detailGrid"></div>
-                <div class="detail-output" id="detailOutput"></div>
-            </div>
+    <div class="status-filter-bar" id="statusFilterBar"></div>
 
-            <div class="log-panel">
-                <h2>
-                    Agent Log
-                    <button class="btn btn-gray btn-sm" onclick="clearLog()">Clear</button>
-                </h2>
-                <div class="log-area" id="logArea">
-                    <div class="log-empty">Logs will appear here when the agent runs.</div>
+    <div class="search-bar">
+        <input id="searchInput" placeholder="Search tasks..." oninput="onSearchInput()">
+    </div>
+    <div class="label-filter-bar" id="labelFilterBar"></div>
+    <div class="kanban" id="kanbanBoard"></div>
+</div>
+
+<!-- Slide Panel -->
+<div class="slide-overlay" id="slideOverlay" onclick="closePanel()"></div>
+<div class="slide-panel" id="slidePanel">
+    <div class="sp-resize" id="spResize"></div>
+    <div class="sp-header">
+        <div class="sp-title-area">
+            <h2 id="spTitle">Task Detail</h2>
+            <div class="sp-title-meta" id="spTitleMeta"></div>
+        </div>
+        <button class="sp-close" onclick="closePanel()">&times;</button>
+    </div>
+    <div class="sp-body">
+        <div class="sp-content">
+            <div class="sp-left" id="spLeft"></div>
+            <div class="sp-divider" id="spDivider"></div>
+            <div class="sp-right" id="spRight">
+                <div class="sp-log-header">
+                    <h3>Execution Log</h3>
+                    <div class="sp-log-header-actions">
+                        <span id="spLogCount" style="font-size:11px;color:#555;"></span>
+                        <button class="sp-log-expand-btn" id="spLogExpandBtn" onclick="toggleLogExpand()" title="Expand log">&#x26F6;</button>
+                    </div>
                 </div>
-            </div>
-
-            <div class="approval-panel" id="approvalPanel">
-                <h2>Approval Gate</h2>
-                <div class="approval-info" id="approvalInfo">No task awaiting approval.</div>
-                <div class="approval-actions" id="approvalActions" style="display:none;">
-                    <button class="btn btn-green" onclick="approveTask()">Approve</button>
-                    <input class="feedback-input" id="feedbackInput" placeholder="Rejection feedback (optional)...">
-                    <button class="btn btn-red" onclick="rejectTask()">Reject</button>
+                <div class="sp-log-area" id="spLogArea">
+                    <div class="sp-log-empty">No logs yet for this task.</div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
 <div class="toast" id="toast"></div>
 """
 
 _JS = r"""
-const STATUS_ICONS = {pending:'○', in_progress:'▶', waiting_approval:'⏳', done:'✅', failed:'❌'};
-const STATUS_LABELS = {pending:'Pending', in_progress:'Running', waiting_approval:'Awaiting', done:'Done', failed:'Failed'};
+const COLUMNS = [
+    {key:'pending',          title:'Backlog',      color:'#3b82f6'},
+    {key:'in_progress',      title:'In Progress',  color:'#a78bfa'},
+    {key:'waiting_approval', title:'Review',        color:'#f59e0b'},
+    {key:'done',             title:'Done',          color:'#22c55e'},
+];
 const PRIORITY_LABELS = {0:'Low',1:'Med',2:'High',3:'Urgent'};
+const STATUS_LABELS = {pending:'Backlog', in_progress:'In Progress', waiting_approval:'Review', done:'Done', failed:'Failed'};
 let eventSource = null;
 let selectedTaskId = null;
 let prevState = null;
-let logHasContent = false;
+let allTasks = [];
+let allTasksUnfiltered = [];
+let activeLabel = null;
+let searchQuery = '';
+let searchTimer = null;
+let activeStatusFilter = localStorage.getItem('statusFilter') || 'all';
+let approvalShownFor = null;  // track which task auto-opened for approval
+let _lastSlideKey = null;  // diff check to avoid unnecessary re-render
+let _lastKanbanKey = null;  // diff check for kanban board
+
+// Task-specific log storage: { taskId: [{timestamp, level, message}, ...] }
+const taskLogs = {};
+
+// ── Kanban Board ──
+
+function renderKanban(tasks) {
+    allTasks = tasks;
+
+    // Skip re-render if data unchanged
+    const kanbanKey = tasks.map(t => `${t.id}:${t.status}:${t.priority}:${t.id===selectedTaskId}`).join('|');
+    if(kanbanKey === _lastKanbanKey) return;
+    _lastKanbanKey = kanbanKey;
+
+    const board = document.getElementById('kanbanBoard');
+
+    const hasFailed = tasks.some(t => t.status === 'failed');
+    const cols = hasFailed ? [...COLUMNS, {key:'failed', title:'Failed', color:'#ef4444'}] : COLUMNS;
+
+    board.style.gridTemplateColumns = `repeat(${cols.length}, 1fr)`;
+
+    board.innerHTML = cols.map(col => {
+        const colTasks = tasks.filter(t => t.status === col.key);
+        const cardsHtml = colTasks.length === 0
+            ? `<div class="col-empty">No tasks</div>`
+            : colTasks.map(t => renderCard(t)).join('');
+        return `
+        <div class="kanban-col col-${col.key}">
+            <div class="col-header">
+                <span class="col-title">${col.title}</span>
+                <span class="col-count">${colTasks.length}</span>
+            </div>
+            ${cardsHtml}
+        </div>`;
+    }).join('');
+}
+
+function renderCard(t) {
+    const elapsed = getElapsed(t);
+    const sel = t.id === selectedTaskId ? ' selected' : '';
+    const actions = [];
+    if(t.status === 'pending') actions.push(`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();runTask(${t.id})" title="Run now">▶</button>`);
+    if(t.status === 'failed') actions.push(`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();retryTask(${t.id})" title="Retry">↻</button>`);
+    if(t.status === 'pending') actions.push(`<button class="btn btn-gray btn-sm" onclick="event.stopPropagation();deleteTask(${t.id})" title="Delete">×</button>`);
+    const logCount = (taskLogs[t.id] || []).length;
+    const logBadge = logCount > 0 ? `<span style="font-size:9px;color:#555;margin-left:4px">${logCount} logs</span>` : '';
+    const labelBadges = (t.labels || []).map(l => `<span class="label-badge">${esc(l)}</span>`).join('');
+
+    return `
+    <div class="k-card${sel}" onclick="selectTask(${t.id})">
+        <div class="k-card-top">
+            <span class="k-card-id">#${t.id}${logBadge}</span>
+            <span class="priority-badge priority-${t.priority}">${PRIORITY_LABELS[t.priority]}</span>
+        </div>
+        <div class="k-card-title">${esc(t.title)}</div>
+        ${labelBadges ? `<div class="k-card-labels">${labelBadges}</div>` : ''}
+        <div class="k-card-footer">
+            <span class="k-card-meta">${elapsed}</span>
+            <div class="k-card-actions">${actions.join('')}</div>
+        </div>
+    </div>`;
+}
+
+// ── Label Filter ──
+
+function renderLabelFilter(tasks) {
+    const allLabels = new Set();
+    tasks.forEach(t => (t.labels || []).forEach(l => allLabels.add(l)));
+    const bar = document.getElementById('labelFilterBar');
+    if(allLabels.size === 0) { bar.innerHTML = ''; return; }
+    bar.innerHTML = `<span style="font-size:11px;color:#666;">Labels:</span>` +
+        [...allLabels].sort().map(l => {
+            const cls = l === activeLabel ? ' active' : '';
+            return `<span class="label-filter-chip${cls}" onclick="toggleLabelFilter('${esc(l)}')">${esc(l)}</span>`;
+        }).join('');
+}
+
+function toggleLabelFilter(label) {
+    activeLabel = activeLabel === label ? null : label;
+    loadTasks();
+}
+
+// ── Status Filter Tabs ──
+
+const STATUS_TABS = [
+    {key:'all',              label:'All'},
+    {key:'pending',          label:'Pending'},
+    {key:'in_progress',      label:'Running'},
+    {key:'done',             label:'Done'},
+    {key:'failed',           label:'Failed'},
+];
+
+function renderStatusTabs(tasks) {
+    const bar = document.getElementById('statusFilterBar');
+    const counts = {};
+    tasks.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
+    bar.innerHTML = STATUS_TABS.map(tab => {
+        const cnt = tab.key === 'all' ? tasks.length : (counts[tab.key] || 0);
+        const cls = activeStatusFilter === tab.key ? ' active' : '';
+        return `<div class="status-tab${cls}" onclick="setStatusFilter('${tab.key}')">
+            ${tab.label}<span class="tab-count">${cnt}</span>
+        </div>`;
+    }).join('');
+}
+
+function setStatusFilter(key) {
+    activeStatusFilter = key;
+    localStorage.setItem('statusFilter', key);
+    loadTasks();
+}
+
+// ── Search ──
+
+function onSearchInput() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+        searchQuery = document.getElementById('searchInput').value.trim();
+        loadTasks();
+    }, 300);
+}
 
 // ── Tasks ──
 
 async function loadTasks() {
     try {
-        const res = await fetch('/api/tasks');
-        const tasks = await res.json();
-        const el = document.getElementById('taskList');
-        el.innerHTML = tasks.map(t => {
-            const elapsed = getElapsed(t);
-            const sel = t.id === selectedTaskId ? ' selected' : '';
-            return `
-            <div class="task-item${sel}" data-id="${t.id}" onclick="selectTask(${t.id})">
-                <span class="task-id">#${t.id}</span>
-                <span class="priority-badge priority-${t.priority}">${PRIORITY_LABELS[t.priority]}</span>
-                <span class="task-title" title="${esc(t.title)}">${esc(t.title)}</span>
-                ${elapsed ? `<span class="task-meta">${elapsed}</span>` : ''}
-                <span class="task-status" title="${STATUS_LABELS[t.status]||t.status}">${STATUS_ICONS[t.status]||'?'}</span>
-                <div class="task-actions" onclick="event.stopPropagation()">
-                    ${t.status==='pending'?`<button class="btn btn-blue btn-sm" onclick="runTask(${t.id})" title="Run now">▶</button>`:''}
-                    ${['pending','failed'].includes(t.status)?`<button class="btn btn-gray btn-sm" onclick="deleteTask(${t.id})" title="Delete">×</button>`:''}
-                </div>
-            </div>`;
-        }).join('');
-        // refresh detail if open
+        // Fetch all tasks (for tab counts, without status filter)
+        const baseParams = new URLSearchParams();
+        if(activeLabel) baseParams.set('label', activeLabel);
+        if(searchQuery) baseParams.set('q', searchQuery);
+        const baseQs = baseParams.toString();
+        const baseUrl = baseQs ? `/api/tasks?${baseQs}` : '/api/tasks';
+        const baseRes = await fetch(baseUrl);
+        allTasksUnfiltered = await baseRes.json();
+        renderStatusTabs(allTasksUnfiltered);
+
+        // If status filter active, fetch filtered subset; otherwise reuse
+        let tasks;
+        if(activeStatusFilter && activeStatusFilter !== 'all') {
+            const params = new URLSearchParams(baseParams);
+            params.set('status', activeStatusFilter);
+            const res = await fetch(`/api/tasks?${params}`);
+            tasks = await res.json();
+        } else {
+            tasks = allTasksUnfiltered;
+        }
+        renderLabelFilter(tasks);
+        renderKanban(tasks);
+        // Only re-render slide panel if task data actually changed
         if(selectedTaskId) {
             const t = tasks.find(x => x.id === selectedTaskId);
-            if(t) showDetail(t);
+            if(t) {
+                const key = JSON.stringify({s:t.status, p:t.priority, o:t.output?.length, e:t.error, pr:t.pr_url, b:t.branch_name});
+                if(key !== _lastSlideKey) {
+                    _lastSlideKey = key;
+                    renderSlideLeft(t);
+                }
+            }
         }
     } catch(e) { console.error('loadTasks', e); }
 }
@@ -266,17 +580,28 @@ async function addTask() {
     if(!title) return;
     const desc = document.getElementById('addDesc').value.trim();
     const pri = parseInt(document.getElementById('addPriority').value);
+    const labelsRaw = document.getElementById('addLabels').value.trim();
+    const labels = labelsRaw ? labelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     await fetch('/api/tasks', {method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({title, description:desc, priority:pri})});
+        body:JSON.stringify({title, description:desc, priority:pri, labels})});
     document.getElementById('addTitle').value = '';
     document.getElementById('addDesc').value = '';
+    document.getElementById('addLabels').value = '';
+    document.getElementById('addForm').classList.remove('visible');
     loadTasks();
 }
 
 async function deleteTask(id) {
+    if(!confirm('Delete this task?')) return;
     await fetch(`/api/tasks/${id}`, {method:'DELETE'});
-    if(selectedTaskId === id) { selectedTaskId = null; document.getElementById('detailPanel').classList.remove('visible'); }
+    if(selectedTaskId === id) closePanel();
     loadTasks();
+}
+
+async function retryTask(id) {
+    await fetch(`/api/tasks/${id}/retry`, {method:'POST'});
+    loadTasks();
+    showToast('Task moved to Backlog');
 }
 
 async function runTask(id) {
@@ -285,41 +610,195 @@ async function runTask(id) {
     loadTasks();
 }
 
-async function selectTask(id) {
+// ── Slide Panel ──
+
+function selectTask(id) {
     selectedTaskId = id;
-    const res = await fetch('/api/tasks');
-    const tasks = await res.json();
-    const t = tasks.find(x => x.id === id);
-    if(t) showDetail(t);
-    loadTasks();  // highlight
+    const t = allTasks.find(x => x.id === id);
+    if(!t) return;
+    openPanel(t);
+    renderKanban(allTasks);
 }
 
-function showDetail(t) {
-    const panel = document.getElementById('detailPanel');
-    panel.classList.add('visible');
-    document.getElementById('detailTitle').textContent = `#${t.id} ${t.title}`;
+async function openPanel(t) {
+    document.getElementById('slideOverlay').classList.add('open');
+    document.getElementById('slidePanel').classList.add('open');
+    document.getElementById('spTitle').textContent = `#${t.id}  ${t.title}`;
 
-    const cards = [];
-    cards.push(cardHtml('Status', STATUS_LABELS[t.status] || t.status));
-    cards.push(cardHtml('Priority', PRIORITY_LABELS[t.priority]));
-    if(t.started_at) cards.push(cardHtml('Started', fmtTime(t.started_at)));
-    if(t.completed_at) cards.push(cardHtml('Completed', fmtTime(t.completed_at)));
+    // Reset expand state
+    document.querySelector('.sp-content').classList.remove('log-expanded');
+    document.getElementById('spLogExpandBtn').innerHTML = '&#x26F6;';
+
+    // Title meta: status + priority badges
+    const meta = document.getElementById('spTitleMeta');
+    meta.innerHTML = `<span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]||t.status}</span>
+        <span class="priority-badge priority-${t.priority}">${PRIORITY_LABELS[t.priority]}</span>`;
     const elapsed = getElapsed(t);
-    if(elapsed) cards.push(cardHtml('Duration', elapsed));
-    if(t.exit_code !== null) cards.push(cardHtml('Exit Code', t.exit_code));
-    if(t.cost_usd) cards.push(cardHtml('Cost', `$${t.cost_usd.toFixed(4)}`));
-    if(t.rejection_feedback) cards.push(cardHtml('Feedback', t.rejection_feedback));
-    document.getElementById('detailGrid').innerHTML = cards.join('');
+    if(elapsed) meta.innerHTML += `<span style="font-size:11px;color:#666">${elapsed}</span>`;
 
-    const out = document.getElementById('detailOutput');
-    if(t.output) { out.textContent = t.output; out.style.display = 'block'; }
-    else if(t.error) { out.textContent = t.error; out.style.display = 'block'; out.style.color = '#ef4444'; }
-    else if(t.description) { out.textContent = t.description; out.style.display = 'block'; out.style.color = '#888'; }
-    else { out.style.display = 'none'; }
+    renderSlideLeft(t);
+
+    // Load persisted logs from DB if not already in memory
+    if(!taskLogs[t.id] || taskLogs[t.id].length === 0) {
+        try {
+            const res = await fetch(`/api/tasks/${t.id}/logs`);
+            const logs = await res.json();
+            if(logs.length > 0) taskLogs[t.id] = logs;
+        } catch(e) {}
+    }
+    renderTaskLog(t.id);
 }
 
-function cardHtml(label, value) {
-    return `<div class="detail-card"><div class="label">${label}</div><div class="value">${esc(String(value))}</div></div>`;
+function closePanel() {
+    document.getElementById('slideOverlay').classList.remove('open');
+    document.getElementById('slidePanel').classList.remove('open');
+    selectedTaskId = null;
+    _lastSlideKey = null;
+    renderKanban(allTasks);
+}
+
+function toggleLogExpand() {
+    const content = document.querySelector('.sp-content');
+    const btn = document.getElementById('spLogExpandBtn');
+    content.classList.toggle('log-expanded');
+    btn.innerHTML = content.classList.contains('log-expanded') ? '&#x2716;' : '&#x26F6;';
+}
+
+function renderSlideLeft(t) {
+    const left = document.getElementById('spLeft');
+    let html = '';
+
+    // ── Description / Goal ──
+    if(t.description) {
+        html += `<div class="sp-section">
+            <div class="sp-section-title">Description</div>
+            <div class="sp-desc">${esc(t.description)}</div>
+        </div>`;
+    }
+
+    // ── Labels ──
+    if(t.labels && t.labels.length > 0) {
+        html += `<div class="sp-section">
+            <div class="sp-section-title">Labels</div>
+            <div>${t.labels.map(l => `<span class="label-badge">${esc(l)}</span>`).join(' ')}</div>
+        </div>`;
+    }
+
+    // ── Meta grid ──
+    html += `<div class="sp-section">
+        <div class="sp-section-title">Details</div>
+        <div class="sp-meta-grid">`;
+    if(t.started_at)
+        html += `<div class="sp-meta-item"><div class="label">Started</div><div class="value">${fmtTime(t.started_at)}</div></div>`;
+    if(t.completed_at)
+        html += `<div class="sp-meta-item"><div class="label">Completed</div><div class="value">${fmtTime(t.completed_at)}</div></div>`;
+    if(t.exit_code !== null && t.exit_code !== undefined)
+        html += `<div class="sp-meta-item"><div class="label">Exit Code</div><div class="value">${t.exit_code}</div></div>`;
+    if(t.cost_usd)
+        html += `<div class="sp-meta-item"><div class="label">Cost</div><div class="value">$${t.cost_usd.toFixed(4)}</div></div>`;
+    if(t.branch_name)
+        html += `<div class="sp-meta-item"><div class="label">Branch</div><div class="value" style="font-size:11px;font-family:monospace">${esc(t.branch_name)}</div></div>`;
+    if(t.pr_url)
+        html += `<div class="sp-meta-item"><div class="label">PR</div><div class="value"><a href="${esc(t.pr_url)}" target="_blank" style="color:#3b82f6;text-decoration:none;font-size:11px">${esc(t.pr_url.split('/').pop())}</a></div></div>`;
+    if(t.rejection_feedback)
+        html += `<div class="sp-meta-item" style="grid-column:1/-1"><div class="label">Rejection Feedback</div><div class="value" style="color:#f87171">${esc(t.rejection_feedback)}</div></div>`;
+    html += `</div></div>`;
+
+    // ── Approval Gate ──
+    if(t.status === 'waiting_approval') {
+        html += `<div class="sp-section">
+            <div class="sp-approval" id="approvalPanel">
+                <div class="sp-approval-title">Approval Gate</div>
+                <div class="sp-approval-actions">
+                    <button class="btn btn-green" onclick="approveTask()">Approve</button>
+                    <input class="feedback-input" id="feedbackInput" placeholder="Rejection feedback...">
+                    <button class="btn btn-red" onclick="rejectTask()">Reject</button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // ── Output / Error ──
+    if(t.output) {
+        html += `<div class="sp-section">
+            <div class="sp-section-title">Output</div>
+            <div class="sp-output">${esc(t.output)}</div>
+        </div>`;
+    } else if(t.error) {
+        html += `<div class="sp-section">
+            <div class="sp-section-title">Error</div>
+            <div class="sp-output" style="color:#ef4444">${esc(t.error)}</div>
+        </div>`;
+    }
+
+    // ── Actions ──
+    const actions = [];
+    if(t.status === 'pending')
+        actions.push(`<button class="btn btn-blue" onclick="runTask(${t.id})">Run Now</button>`);
+    if(t.status === 'failed')
+        actions.push(`<button class="btn btn-blue" onclick="retryTask(${t.id})">Retry</button>`);
+    if(t.status === 'done')
+        actions.push(`<button class="btn btn-gray" onclick="retryTask(${t.id})">Re-run</button>`);
+    if(['pending','failed'].includes(t.status))
+        actions.push(`<button class="btn btn-gray" onclick="deleteTask(${t.id})">Delete</button>`);
+    if(actions.length) {
+        html += `<div class="sp-section">
+            <div class="sp-section-title">Actions</div>
+            <div class="sp-actions">${actions.join('')}</div>
+        </div>`;
+    }
+
+    left.innerHTML = html;
+}
+
+// ── Task-specific Log ──
+
+function isLogNearBottom(area) {
+    return area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+}
+
+function renderTaskLog(taskId) {
+    const area = document.getElementById('spLogArea');
+    const counter = document.getElementById('spLogCount');
+    const logs = taskLogs[taskId] || [];
+    counter.textContent = logs.length > 0 ? `${logs.length}` : '';
+
+    if(logs.length === 0) {
+        area.innerHTML = '<div class="sp-log-empty">No logs yet for this task.</div>';
+        return;
+    }
+    const wasNearBottom = isLogNearBottom(area);
+    area.innerHTML = logs.map(log => {
+        const ts = log.timestamp ? fmtTime(log.timestamp) : '';
+        return `<div class="log-line"><span class="log-time">${ts}</span> <span class="log-${log.level}">[${log.level}]</span> ${esc(log.message)}</div>`;
+    }).join('');
+    if(wasNearBottom) area.scrollTop = area.scrollHeight;
+}
+
+function appendTaskLog(taskId, log) {
+    if(!taskLogs[taskId]) taskLogs[taskId] = [];
+    taskLogs[taskId].push(log);
+    // Keep max 500 per task
+    if(taskLogs[taskId].length > 500) taskLogs[taskId].shift();
+
+    // If this task's panel is open, append live
+    if(selectedTaskId === taskId) {
+        const area = document.getElementById('spLogArea');
+        const counter = document.getElementById('spLogCount');
+        // Clear empty placeholder
+        const empty = area.querySelector('.sp-log-empty');
+        if(empty) area.innerHTML = '';
+
+        const wasNearBottom = isLogNearBottom(area);
+        const ts = log.timestamp ? fmtTime(log.timestamp) : '';
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        line.innerHTML = `<span class="log-time">${ts}</span> <span class="log-${log.level}">[${log.level}]</span> ${esc(log.message)}`;
+        area.appendChild(line);
+        while(area.children.length > 500) area.removeChild(area.firstChild);
+        if(wasNearBottom) area.scrollTop = area.scrollHeight;
+        counter.textContent = `${taskLogs[taskId].length}`;
+    }
 }
 
 function fmtTime(iso) {
@@ -331,7 +810,8 @@ function fmtTime(iso) {
 // ── Agent ──
 
 async function agentStart() {
-    await fetch('/api/agent/start', {method:'POST'});
+    const pri = parseInt(document.getElementById('minPriority').value);
+    await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({min_priority:pri})});
     ensureSSE();
 }
 
@@ -353,33 +833,19 @@ async function pollStatus() {
         document.getElementById('btnStart').disabled = s.loop_running;
         document.getElementById('btnStop').disabled = !s.loop_running;
 
-        // Auto-connect SSE when agent is active
         if(s.state !== 'stopped' && !eventSource) ensureSSE();
 
-        // Approval panel
-        const panel = document.getElementById('approvalPanel');
-        const info = document.getElementById('approvalInfo');
-        const actions = document.getElementById('approvalActions');
-        if(s.state === 'waiting_approval') {
-            panel.classList.add('active');
-            info.textContent = `Task #${s.current_task_id}: ${s.current_task_title || ''}`;
-            actions.style.display = 'flex';
-        } else {
-            panel.classList.remove('active');
-            if(s.state === 'running' && s.current_task_id) {
-                info.textContent = `Running: #${s.current_task_id} ${s.current_task_title||''}`;
-            } else if(s.state === 'idle' && s.loop_running) {
-                info.textContent = 'Agent idle — waiting for next task.';
-            } else {
-                info.textContent = 'No task awaiting approval.';
-            }
-            actions.style.display = 'none';
+        // Auto-open approval task in slide panel (once per task)
+        if(s.state === 'waiting_approval' && s.current_task_id && approvalShownFor !== s.current_task_id) {
+            approvalShownFor = s.current_task_id;
+            const t = allTasks.find(x => x.id === s.current_task_id);
+            if(t) { selectedTaskId = s.current_task_id; openPanel(t); renderKanban(allTasks); }
         }
+        if(s.state !== 'waiting_approval') approvalShownFor = null;
 
-        // Toast on state change
         if(prevState && prevState !== s.state) {
             if(s.state === 'idle' && prevState === 'running') showToast('Task completed');
-            if(s.state === 'waiting_approval') showToast('Awaiting approval — check the approval panel');
+            if(s.state === 'waiting_approval') showToast('Awaiting approval');
             if(s.state === 'stopped' && prevState !== 'stopped') showToast('Agent stopped');
         }
         prevState = s.state;
@@ -393,9 +859,10 @@ async function approveTask() {
 }
 
 async function rejectTask() {
-    const fb = document.getElementById('feedbackInput').value.trim();
+    const input = document.getElementById('feedbackInput');
+    const fb = input ? input.value.trim() : '';
     await fetch('/api/agent/reject', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({feedback:fb})});
-    document.getElementById('feedbackInput').value = '';
+    if(input) input.value = '';
 }
 
 // ── SSE Logs ──
@@ -403,35 +870,21 @@ async function rejectTask() {
 function ensureSSE() {
     if(eventSource) return;
     eventSource = new EventSource('/api/agent/logs');
-    const logArea = document.getElementById('logArea');
 
     eventSource.onmessage = (e) => {
         try {
             const log = JSON.parse(e.data);
-            if(!logHasContent) { logArea.innerHTML = ''; logHasContent = true; }
-            const ts = log.timestamp ? log.timestamp.substring(11,19) : '';
-            const line = document.createElement('div');
-            line.className = 'log-line';
-            const taskTag = log.task_id ? `<span style="color:#555">#${log.task_id}</span> ` : '';
-            line.innerHTML = `<span class="log-time">${ts}</span> ${taskTag}<span class="log-${log.level}">[${log.level}]</span> ${esc(log.message)}`;
-            logArea.appendChild(line);
-            // cap at 500 lines
-            while(logArea.children.length > 500) logArea.removeChild(logArea.firstChild);
-            logArea.scrollTop = logArea.scrollHeight;
+            // Store per task
+            if(log.task_id) {
+                appendTaskLog(log.task_id, log);
+            }
         } catch(err) {}
     };
     eventSource.onerror = () => {
         eventSource.close();
         eventSource = null;
-        // reconnect after 3s
         setTimeout(() => { if(prevState && prevState !== 'stopped') ensureSSE(); }, 3000);
     };
-}
-
-function clearLog() {
-    const logArea = document.getElementById('logArea');
-    logArea.innerHTML = '<div class="log-empty">Logs cleared.</div>';
-    logHasContent = false;
 }
 
 function showToast(msg) {
@@ -443,11 +896,89 @@ function showToast(msg) {
 
 function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
+// Keyboard: Escape closes panel
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closePanel(); });
+
+// ── Panel Resize (outer width) ──
+(function() {
+    const panel = document.getElementById('slidePanel');
+    const handle = document.getElementById('spResize');
+    const MIN_W = 400, MAX_W = Math.max(window.innerWidth - 100, 500);
+    let startX = 0, startW = 0, dragging = false;
+
+    const saved = localStorage.getItem('sp-width');
+    if(saved) panel.style.width = saved + 'px';
+
+    handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        startX = e.clientX;
+        startW = panel.offsetWidth;
+        panel.classList.add('resizing');
+        handle.classList.add('active');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if(!dragging) return;
+        const diff = startX - e.clientX;
+        const newW = Math.min(MAX_W, Math.max(MIN_W, startW + diff));
+        panel.style.width = newW + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if(!dragging) return;
+        dragging = false;
+        panel.classList.remove('resizing');
+        handle.classList.remove('active');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem('sp-width', panel.offsetWidth);
+    });
+})();
+
+// ── Inner Divider Resize (left/right columns) ──
+(function() {
+    const divider = document.getElementById('spDivider');
+    const right = document.getElementById('spRight');
+    const MIN_R = 180, MAX_R = 600;
+    let startX = 0, startRW = 0, dragging = false;
+
+    const saved = localStorage.getItem('sp-right-w');
+    if(saved) right.style.width = saved + 'px';
+
+    divider.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        startX = e.clientX;
+        startRW = right.offsetWidth;
+        divider.classList.add('active');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if(!dragging) return;
+        const diff = startX - e.clientX;
+        const newW = Math.min(MAX_R, Math.max(MIN_R, startRW + diff));
+        right.style.width = newW + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if(!dragging) return;
+        dragging = false;
+        divider.classList.remove('active');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem('sp-right-w', right.offsetWidth);
+    });
+})();
+
 // ── Init ──
 loadTasks();
 pollStatus();
 setInterval(pollStatus, 3000);
-// Always connect SSE on load to catch existing logs
 ensureSSE();
 """
 

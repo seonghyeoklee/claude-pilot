@@ -4,3 +4,8 @@ auto_approve: false
 poll_interval: 5
 claude_model: null
 claude_max_budget: null
+# Gitflow: branch per task + PR
+gitflow: true
+branch_prefix: feat
+base_branch: main
+auto_merge: true  # 승인 시 자동 머지

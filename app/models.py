@@ -29,6 +29,7 @@ class Task(BaseModel):
     description: str = ""
     status: TaskStatus = TaskStatus.PENDING
     priority: TaskPriority = TaskPriority.MEDIUM
+    labels: list[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: _now_iso())
     updated_at: str = Field(default_factory=lambda: _now_iso())
     started_at: str | None = None
@@ -39,12 +40,15 @@ class Task(BaseModel):
     cost_usd: float | None = None
     approval_status: str = ""
     rejection_feedback: str = ""
+    branch_name: str = ""
+    pr_url: str = ""
 
 
 class TaskCreate(BaseModel):
     title: str
     description: str = ""
     priority: TaskPriority = TaskPriority.MEDIUM
+    labels: list[str] = Field(default_factory=list)
 
 
 class TaskUpdate(BaseModel):
@@ -52,6 +56,7 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
+    labels: list[str] | None = None
 
 
 class AgentState(str, Enum):

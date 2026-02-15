@@ -9,6 +9,8 @@ import os
 import re
 from collections import deque
 
+from pathlib import Path
+
 from app.config import AppConfig
 from app.database import Database
 from app.models import (
@@ -384,11 +386,63 @@ class AgentWorker:
         await self._git("checkout", self.config.base_branch, task_id=task_id)
         await self._git("branch", "-D", branch, task_id=task_id)
 
+    _MAX_CONTEXT_BYTES = 10 * 1024  # 10KB limit for injected context
+
     def _build_prompt(self, title: str, description: str) -> str:
-        parts = [title]
+        parts: list[str] = []
+
+        # Inject project context files
+        context = self._load_context_files()
+        if context:
+            parts.append(context)
+
+        parts.append(title)
         if description:
             parts.append(description)
         return "\n\n".join(parts)
+
+    def _load_context_files(self) -> str:
+        """Read context_files from target_project and return combined text."""
+        if not self.config.context_files:
+            return ""
+
+        base = Path(self.config.target_project)
+        sections: list[str] = []
+        total_size = 0
+
+        for relpath in self.config.context_files:
+            filepath = base / relpath
+            try:
+                content = filepath.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue  # skip missing or unreadable files
+
+            total_size += len(content.encode("utf-8"))
+            sections.append(f"# {relpath}\n{content}")
+
+        if not sections:
+            return ""
+
+        combined = "\n\n".join(sections)
+
+        if total_size > self._MAX_CONTEXT_BYTES:
+            # Truncate to limit and add notice
+            truncated = combined[: self._MAX_CONTEXT_BYTES]
+            combined = truncated + "\n\n... (context truncated, exceeded 10KB limit)"
+            self._add_log(
+                LogLevel.SYSTEM,
+                f"Project context truncated ({total_size} bytes > 10KB limit)",
+                self._current_task_id,
+            )
+
+        file_names = ", ".join(self.config.context_files)
+        self._add_log(
+            LogLevel.SYSTEM,
+            f"Injected project context: {file_names} ({total_size} bytes)",
+            self._current_task_id,
+        )
+
+        return f"[Project Context]\n{combined}\n[/Project Context]"
 
     async def _run_claude(self, prompt: str, task_id: int) -> tuple[int, str, float | None]:
         cmd = [self.config.claude_command, "-p", prompt, "--output-format", "stream-json", "--verbose"]

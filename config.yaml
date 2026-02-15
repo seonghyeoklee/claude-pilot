@@ -12,3 +12,7 @@ auto_merge: true  # 승인 시 자동 머지
 # Retry on failure
 max_retries: 2
 retry_backoff_sec: 5
+# Context injection: files relative to target_project to inject into prompt
+context_files:
+  - CLAUDE.md
+  - pyproject.toml

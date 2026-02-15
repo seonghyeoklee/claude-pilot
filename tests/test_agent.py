@@ -198,6 +198,95 @@ async def test_build_prompt_no_desc(setup):
     assert p == "Fix bug"
 
 
+async def test_build_prompt_with_context_files(setup):
+    """Context files are injected before the task prompt."""
+    agent, _, config = setup
+    tmp = config.target_project
+
+    # Create context files in the temp dir
+    Path(tmp, "CLAUDE.md").write_text("# My Project\nBuild instructions here.")
+    Path(tmp, "pyproject.toml").write_text('[project]\nname = "demo"')
+    config.context_files = ["CLAUDE.md", "pyproject.toml"]
+
+    p = agent._build_prompt("Fix bug", "In login module")
+    assert "[Project Context]" in p
+    assert "# My Project" in p
+    assert "Build instructions here." in p
+    assert '[project]\nname = "demo"' in p
+    assert "Fix bug" in p
+    assert "In login module" in p
+    # Context should come before the task
+    ctx_pos = p.index("[Project Context]")
+    task_pos = p.index("Fix bug")
+    assert ctx_pos < task_pos
+
+
+async def test_build_prompt_missing_context_file(setup):
+    """Missing context files are silently skipped."""
+    agent, _, config = setup
+    config.context_files = ["nonexistent.md", "also-missing.toml"]
+
+    p = agent._build_prompt("Fix bug", "")
+    assert p == "Fix bug"
+    assert "[Project Context]" not in p
+
+
+async def test_build_prompt_partial_context_files(setup):
+    """Only existing files are included; missing ones skipped."""
+    agent, _, config = setup
+    tmp = config.target_project
+    Path(tmp, "CLAUDE.md").write_text("# Rules\nFollow these.")
+    config.context_files = ["CLAUDE.md", "missing.txt"]
+
+    p = agent._build_prompt("Do work", "")
+    assert "[Project Context]" in p
+    assert "# Rules" in p
+    assert "missing.txt" not in p
+
+
+async def test_build_prompt_context_truncation(setup):
+    """Context exceeding 10KB is truncated."""
+    agent, _, config = setup
+    tmp = config.target_project
+    # Create a file larger than 10KB
+    big_content = "x" * 12000
+    Path(tmp, "big.md").write_text(big_content)
+    config.context_files = ["big.md"]
+
+    p = agent._build_prompt("Task", "")
+    assert "truncated" in p
+    # Verify log recorded truncation
+    logs = agent.get_logs()
+    trunc_logs = [l for l in logs if "truncated" in l.message.lower()]
+    assert len(trunc_logs) >= 1
+
+
+async def test_build_prompt_context_log(setup):
+    """Context injection is logged with file names and size."""
+    agent, _, config = setup
+    tmp = config.target_project
+    Path(tmp, "CLAUDE.md").write_text("Hello")
+    config.context_files = ["CLAUDE.md"]
+
+    agent._build_prompt("Task", "")
+
+    logs = agent.get_logs()
+    ctx_logs = [l for l in logs if "injected project context" in l.message.lower()]
+    assert len(ctx_logs) == 1
+    assert "CLAUDE.md" in ctx_logs[0].message
+
+
+async def test_build_prompt_empty_context_files(setup):
+    """Empty context_files list produces no context section."""
+    agent, _, config = setup
+    config.context_files = []
+
+    p = agent._build_prompt("Fix bug", "Details")
+    assert "[Project Context]" not in p
+    assert "Fix bug" in p
+    assert "Details" in p
+
+
 @patch("app.agent.asyncio.create_subprocess_exec")
 async def test_claude_not_found(mock_exec, setup):
     agent, db, _ = setup

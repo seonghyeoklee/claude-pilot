@@ -367,14 +367,15 @@ class AgentWorker:
         return pr_url
 
     async def _wait_for_review_and_address(self, pr_url: str, branch_name: str, task_id: int, title: str) -> None:
-        """Wait for CodeRabbit review (max 10min), address comments, then return."""
+        """Wait for CodeRabbit review (max 10min), address actionable inline comments."""
         pr_number = pr_url.rstrip("/").split("/")[-1]
-        max_wait = 600  # 10 minutes
+        max_wait = 600  # 10 minutes total
         poll_interval = 30  # check every 30 seconds
         elapsed = 0
 
         self._add_log(LogLevel.SYSTEM, f"Waiting for code review on PR #{pr_number} (max {max_wait//60}min)...", task_id)
 
+        # Phase 1: Wait for inline review comments (not just walkthrough summary)
         review_comments: list[str] = []
         while elapsed < max_wait:
             await asyncio.sleep(poll_interval)
@@ -382,18 +383,33 @@ class AgentWorker:
             if self._stop_requested:
                 return
 
-            # Fetch review comments via gh API
-            comments = await self._get_review_comments(pr_number, task_id)
+            # Fetch actionable inline comments (file-level, not PR summary)
+            inline = await self._get_inline_review_comments(pr_number, task_id)
+            # Also check review body for actionable content
+            review_body = await self._get_review_body_comments(pr_number, task_id)
+            comments = inline + review_body
+
             if comments:
                 review_comments = comments
-                self._add_log(LogLevel.SYSTEM, f"Found {len(comments)} review comment(s) after {elapsed}s", task_id)
+                self._add_log(LogLevel.SYSTEM, f"Found {len(comments)} actionable comment(s) after {elapsed}s", task_id)
+                # Wait extra 30s — CodeRabbit may still be posting more inline comments
+                self._add_log(LogLevel.SYSTEM, "Waiting 30s for additional comments...", task_id)
+                await asyncio.sleep(30)
+                elapsed += 30
+                if self._stop_requested:
+                    return
+                # Re-fetch to catch any late comments
+                inline2 = await self._get_inline_review_comments(pr_number, task_id)
+                review_body2 = await self._get_review_body_comments(pr_number, task_id)
+                review_comments = inline2 + review_body2
+                self._add_log(LogLevel.SYSTEM, f"Final count: {len(review_comments)} actionable comment(s)", task_id)
                 break
 
             if elapsed % 60 == 0:
                 self._add_log(LogLevel.SYSTEM, f"Still waiting for review... ({elapsed}s/{max_wait}s)", task_id)
 
         if not review_comments:
-            self._add_log(LogLevel.SYSTEM, "No review comments received, proceeding to merge", task_id)
+            self._add_log(LogLevel.SYSTEM, "No actionable review comments, proceeding to merge", task_id)
             return
 
         # Address review comments (max 2 rounds)
@@ -432,10 +448,21 @@ class AgentWorker:
                     break
                 review_comments = new_comments
 
-    async def _get_review_comments(self, pr_number: str, task_id: int) -> list[str]:
-        """Fetch review comments from PR via gh CLI. Returns list of comment bodies."""
+    # Patterns to skip: walkthrough summaries, processing messages, tips
+    _SKIP_PATTERNS = [
+        "walkthrough",
+        "processing",
+        "in progress",
+        "<!-- This is an auto-generated comment",
+        "<!-- tips_start",
+        "Thank you for using CodeRabbit",
+        "📝 Walkthrough",
+    ]
+
+    async def _get_inline_review_comments(self, pr_number: str, task_id: int) -> list[str]:
+        """Fetch inline (file-level) review comments — these are the actionable ones."""
         proc = await asyncio.create_subprocess_exec(
-            "gh", "pr", "view", pr_number, "--json", "comments,reviews",
+            "gh", "api", f"repos/:owner/:repo/pulls/{pr_number}/comments",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=self.config.target_project,
@@ -451,19 +478,50 @@ class AgentWorker:
             return []
 
         comments: list[str] = []
-        # PR-level comments (from bots like CodeRabbit)
-        for c in data.get("comments", []):
+        for c in data:
             body = c.get("body", "")
-            author = c.get("author", {}).get("login", "")
-            # Filter for bot review comments (CodeRabbit, etc.)
-            if body and ("coderabbit" in author.lower() or "actionable" in body.lower() or "suggestion" in body.lower() or "issue" in body.lower()):
-                comments.append(f"[{author}]: {body}")
+            author = c.get("user", {}).get("login", "")
+            path = c.get("path", "")
+            if not body or not body.strip():
+                continue
+            # Skip non-actionable patterns
+            if any(pat.lower() in body.lower() for pat in self._SKIP_PATTERNS):
+                continue
+            comments.append(f"[{author} on {path}]: {body}")
 
-        # Review comments (inline code comments)
+        return comments
+
+    async def _get_review_body_comments(self, pr_number: str, task_id: int) -> list[str]:
+        """Fetch review-level comments (the summary posted with 'Actionable comments posted: N')."""
+        proc = await asyncio.create_subprocess_exec(
+            "gh", "pr", "view", pr_number, "--json", "reviews",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=self.config.target_project,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace").strip()
+        if proc.returncode != 0:
+            return []
+
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            return []
+
+        comments: list[str] = []
         for r in data.get("reviews", []):
             body = r.get("body", "")
             author = r.get("author", {}).get("login", "")
-            if body and body.strip():
+            if not body or not body.strip():
+                continue
+            # Only include reviews with actionable content
+            body_lower = body.lower()
+            if "actionable comments posted: 0" in body_lower:
+                continue
+            if any(pat.lower() in body_lower for pat in self._SKIP_PATTERNS):
+                continue
+            if "actionable" in body_lower or "issue" in body_lower or "suggestion" in body_lower:
                 comments.append(f"[{author} review]: {body}")
 
         return comments

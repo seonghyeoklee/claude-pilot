@@ -12,7 +12,7 @@ _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 
 class AppConfig(BaseModel):
-    target_project: str
+    target_project: str = ""
     claude_command: str = "claude"
     auto_approve: bool = False
     poll_interval: int = 5

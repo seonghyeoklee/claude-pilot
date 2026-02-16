@@ -24,7 +24,8 @@ async def lifespan(app: FastAPI):
     agent = AgentWorker(config, db)
     app.state.db = db
     app.state.agent = agent
-    logging.getLogger(__name__).info("Claude Pilot started — target: %s", config.target_project)
+    target_msg = config.target_project or "(none — use Plans for multi-target)"
+    logging.getLogger(__name__).info("Claude Pilot started — target: %s", target_msg)
     yield
     await agent.stop_loop()
     await db.close()

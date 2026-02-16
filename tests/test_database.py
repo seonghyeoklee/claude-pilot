@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.database import Database
-from app.models import TaskCreate, TaskPriority, TaskStatus, TaskUpdate
+from app.models import PlanCreate, PlanStatus, PlanUpdate, TaskCreate, TaskPriority, TaskStatus, TaskUpdate
 
 
 @pytest.fixture
@@ -287,3 +287,133 @@ async def test_get_logs_limit(db: Database):
     assert len(logs) == 5
     assert logs[0].message == "Log 0"
     assert logs[4].message == "Log 4"
+
+
+# ── Plan CRUD Tests ──
+
+
+async def test_create_plan(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Auth System", spec="Build auth", targets={"backend": {"project": "/tmp"}}))
+    assert plan.id > 0
+    assert plan.title == "Auth System"
+    assert plan.spec == "Build auth"
+    assert plan.status == PlanStatus.DRAFT
+    assert plan.targets == {"backend": {"project": "/tmp"}}
+
+
+async def test_get_plan(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Get Plan"))
+    fetched = await db.get_plan(plan.id)
+    assert fetched is not None
+    assert fetched.title == "Get Plan"
+
+
+async def test_get_plan_nonexistent(db: Database):
+    assert await db.get_plan(9999) is None
+
+
+async def test_list_plans(db: Database):
+    await db.create_plan(PlanCreate(title="A"))
+    await db.create_plan(PlanCreate(title="B"))
+    plans = await db.list_plans()
+    assert len(plans) == 2
+
+
+async def test_list_plans_filter_status(db: Database):
+    p1 = await db.create_plan(PlanCreate(title="Running"))
+    await db.set_plan_status(p1.id, PlanStatus.RUNNING)
+    await db.create_plan(PlanCreate(title="Draft"))
+    running = await db.list_plans(PlanStatus.RUNNING)
+    assert len(running) == 1
+    assert running[0].title == "Running"
+
+
+async def test_update_plan(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Old"))
+    updated = await db.update_plan(plan.id, PlanUpdate(title="New", spec="Updated spec"))
+    assert updated.title == "New"
+    assert updated.spec == "Updated spec"
+
+
+async def test_update_plan_targets(db: Database):
+    plan = await db.create_plan(PlanCreate(title="T", targets={"a": {"project": "/a"}}))
+    updated = await db.update_plan(plan.id, PlanUpdate(targets={"b": {"project": "/b"}}))
+    assert updated.targets == {"b": {"project": "/b"}}
+
+
+async def test_update_plan_nonexistent(db: Database):
+    assert await db.update_plan(9999, PlanUpdate(title="X")) is None
+
+
+async def test_delete_plan(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Del"))
+    assert await db.delete_plan(plan.id)
+    assert await db.get_plan(plan.id) is None
+
+
+async def test_delete_plan_nonexistent(db: Database):
+    assert not await db.delete_plan(9999)
+
+
+async def test_set_plan_status(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Status"))
+    await db.set_plan_status(plan.id, PlanStatus.RUNNING)
+    fetched = await db.get_plan(plan.id)
+    assert fetched.status == PlanStatus.RUNNING
+
+
+# ── Plan Task Tests ──
+
+
+async def test_create_plan_task(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Plan"))
+    task = await db.create_plan_task(plan.id, "Task 1", "Do stuff", "backend", 0)
+    assert task.plan_id == plan.id
+    assert task.target == "backend"
+    assert task.task_order == 0
+
+
+async def test_get_plan_tasks(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Plan"))
+    await db.create_plan_task(plan.id, "Second", "", "api", 1)
+    await db.create_plan_task(plan.id, "First", "", "api", 0)
+    tasks = await db.get_plan_tasks(plan.id)
+    assert len(tasks) == 2
+    assert tasks[0].title == "First"
+    assert tasks[1].title == "Second"
+
+
+async def test_pick_next_plan_task(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Plan"))
+    t1 = await db.create_plan_task(plan.id, "A", "", "be", 0)
+    await db.create_plan_task(plan.id, "B", "", "fe", 1)
+    nxt = await db.pick_next_plan_task(plan.id)
+    assert nxt.title == "A"
+    # Mark first done, next should be B
+    await db.set_task_done(t1.id)
+    nxt2 = await db.pick_next_plan_task(plan.id)
+    assert nxt2.title == "B"
+
+
+async def test_pick_next_plan_task_empty(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Empty"))
+    assert await db.pick_next_plan_task(plan.id) is None
+
+
+async def test_reorder_plan_tasks(db: Database):
+    plan = await db.create_plan(PlanCreate(title="Reorder"))
+    t1 = await db.create_plan_task(plan.id, "A", "", "", 0)
+    t2 = await db.create_plan_task(plan.id, "B", "", "", 1)
+    # Reverse order
+    await db.reorder_plan_tasks(plan.id, [t2.id, t1.id])
+    tasks = await db.get_plan_tasks(plan.id)
+    assert tasks[0].title == "B"
+    assert tasks[1].title == "A"
+
+
+async def test_plan_task_migration(db: Database):
+    """Verify plan_id, target, task_order columns exist on tasks table."""
+    t = await db.create_task(TaskCreate(title="Normal task"))
+    assert t.plan_id is None
+    assert t.target == ""
+    assert t.task_order == 0

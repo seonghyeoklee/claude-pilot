@@ -963,3 +963,213 @@ def test_reduced_motion_support(html):
     """prefers-reduced-motion media query disables animations"""
     assert "prefers-reduced-motion: reduce" in html
     assert "animation: none" in html
+
+
+# ── Navigation Tabs Tests ──
+
+
+def test_nav_tabs(html):
+    """Navigation tabs for Plans and Quick Tasks exist"""
+    assert "nav-tabs" in html
+    assert 'id="navTabs"' in html
+    assert "Quick Tasks" in html
+    assert "Plans" in html
+
+
+def test_nav_tab_css(html):
+    """Nav tab CSS classes defined"""
+    assert ".nav-tab" in html
+    assert ".nav-tab.active" in html
+
+
+def test_nav_tab_onclick(html):
+    """Nav tabs have navigate() onclick"""
+    assert "navigate('tasks')" in html
+    assert "navigate('plans')" in html
+
+
+# ── Hash Router Tests ──
+
+
+def test_hash_router_function(html):
+    """handleRoute function exists"""
+    assert "function handleRoute()" in html
+
+
+def test_hash_router_views(html):
+    """Router shows/hides viewTasks and viewPlans"""
+    assert 'id="viewTasks"' in html
+    assert 'id="viewPlans"' in html
+    assert "function showView(view)" in html
+
+
+def test_hash_change_listener(html):
+    """hashchange event listener registered"""
+    assert "hashchange" in html
+
+
+def test_navigate_function(html):
+    """navigate() function sets window.location.hash"""
+    assert "function navigate(route)" in html
+    assert "window.location.hash" in html
+
+
+# ── Plan List Tests ──
+
+
+def test_plan_list_render(html):
+    """renderPlanList function exists"""
+    assert "function renderPlanList()" in html
+
+
+def test_plan_list_api_call(html):
+    """Plan list fetches from /api/plans"""
+    assert "/api/plans" in html
+    assert "function loadPlans()" in html
+
+
+def test_plan_list_new_button(html):
+    """Plan list has 'New Plan' button"""
+    assert "New Plan" in html
+    assert "plans/new" in html
+
+
+# ── Plan Create Tests ──
+
+
+def test_plan_create_form(html):
+    """renderPlanCreate function with form elements"""
+    assert "function renderPlanCreate()" in html
+    assert "plan-form" in html
+    assert "planTitle" in html
+    assert "planSpec" in html
+
+
+def test_plan_target_rows(html):
+    """Target rows with add/remove buttons"""
+    assert "plan-target-rows" in html
+    assert "function addPlanTargetRow()" in html
+    assert "plan-target-name" in html
+    assert "plan-target-path" in html
+
+
+def test_plan_submit(html):
+    """submitPlan function posts to API"""
+    assert "function submitPlan()" in html
+    assert "/api/plans" in html
+
+
+# ── Plan Review Tests ──
+
+
+def test_plan_review_layout(html):
+    """Plan review two-column layout"""
+    assert "function renderPlanReview(plan)" in html
+    assert "plan-review" in html
+    assert "plan-spec-panel" in html
+    assert "plan-tasks-panel" in html
+
+
+def test_plan_review_approve_button(html):
+    """Approve & Run button in review"""
+    assert "function approvePlan(planId)" in html
+    assert "Approve" in html
+
+
+def test_plan_review_redecompose(html):
+    """Re-decompose button"""
+    assert "function redecomposePlan(planId)" in html
+    assert "Re-decompose" in html
+
+
+# ── Plan Monitor Tests ──
+
+
+def test_plan_monitor_layout(html):
+    """Plan monitor two-column layout"""
+    assert "function renderPlanMonitor(plan)" in html
+    assert "plan-monitor" in html
+    assert "plan-monitor-left" in html
+    assert "plan-monitor-right" in html
+
+
+def test_plan_monitor_progress_bar(html):
+    """Progress bar in plan monitor"""
+    assert "plan-progress-bar" in html
+    assert "plan-progress-fill" in html
+
+
+def test_plan_monitor_task_flow(html):
+    """Task flow items in monitor"""
+    assert "task-flow" in html
+    assert "task-flow-item" in html
+    assert "task-flow-icon" in html
+
+
+def test_plan_monitor_output_area(html):
+    """Output area for viewing task results"""
+    assert "planOutputArea" in html
+    assert "plan-output-area" in html
+    assert "function showPlanTaskOutput(taskId)" in html
+
+
+def test_plan_monitor_stop_button(html):
+    """Stop button for running plans"""
+    assert "function stopPlan(planId)" in html
+
+
+# ── Plan Card Tests ──
+
+
+def test_plan_card_css(html):
+    """Plan card CSS classes"""
+    assert ".plan-card" in html
+    assert ".plan-card-header" in html
+    assert ".plan-card-title" in html
+
+
+def test_plan_status_badges(html):
+    """Plan status badge CSS classes"""
+    assert ".plan-status" in html
+    assert ".plan-status-draft" in html
+    assert ".plan-status-running" in html
+    assert ".plan-status-completed" in html
+    assert ".plan-status-failed" in html
+
+
+def test_target_badge_css(html):
+    """Target badge CSS"""
+    assert ".target-badge" in html
+
+
+# ── Plan Form CSS Tests ──
+
+
+def test_plan_form_css(html):
+    """Plan form CSS classes"""
+    assert ".plan-form" in html
+    assert ".plan-form-group" in html
+
+
+def test_plan_target_row_css(html):
+    """Plan target row CSS"""
+    assert ".plan-target-row" in html
+    assert ".plan-target-rows" in html
+
+
+# ── Plan Detail Tests ──
+
+
+def test_plan_detail_load(html):
+    """loadPlanDetail function exists"""
+    assert "function loadPlanDetail(planId)" in html
+
+
+def test_plan_delete(html):
+    """deletePlan function exists"""
+    assert "function deletePlan(planId)" in html
+
+
+def test_plan_detail_polling(html):
+    """Plan detail polls for updates on running plans"""
+    assert "planPollTimer" in html

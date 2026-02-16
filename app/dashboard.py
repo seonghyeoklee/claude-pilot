@@ -607,13 +607,148 @@ _EXTRA_CSS = """
 .toast-success { border-left: 3px solid #22c55e; }
 .toast-error { border-left: 3px solid #ef4444; }
 .toast-info { border-left: 3px solid #3b82f6; }
+
+/* ── Navigation Tabs ── */
+.nav-tabs {
+    display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border);
+}
+.nav-tab {
+    padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer;
+    color: var(--text-tertiary); border-bottom: 2px solid transparent; transition: 0.15s;
+    background: none; border-top: none; border-left: none; border-right: none;
+}
+.nav-tab:hover { color: var(--text-secondary); }
+.nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Plan Card ── */
+.plan-card {
+    background: var(--bg-card); border-radius: 12px; padding: 18px 22px;
+    border: 1px solid var(--border); cursor: pointer; transition: background 0.15s, border-color 0.15s;
+    margin-bottom: 10px;
+}
+.plan-card:hover { border-color: var(--accent); background: var(--hover-overlay); }
+.plan-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.plan-card-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.plan-card-meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-tertiary); }
+.plan-card-targets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.plan-card-progress { margin-top: 10px; }
+.plan-card-progress-bar {
+    height: 4px; background: var(--bg-panel); border-radius: 2px; overflow: hidden;
+}
+.plan-card-progress-fill {
+    height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s;
+}
+
+/* ── Target Badge ── */
+.target-badge {
+    display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 4px;
+    font-weight: 700; background: rgba(88,166,255,0.12); color: var(--accent);
+}
+
+/* ── Plan Status Badge ── */
+.plan-status { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.plan-status-draft { background: rgba(107,114,128,0.15); color: #9ca3af; }
+.plan-status-decomposing { background: rgba(167,139,250,0.15); color: #a78bfa; }
+.plan-status-reviewing { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.plan-status-approved { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.plan-status-running { background: rgba(88,166,255,0.15); color: var(--accent); }
+.plan-status-completed { background: rgba(34,197,94,0.15); color: #22c55e; }
+.plan-status-failed { background: rgba(239,68,68,0.15); color: #f87171; }
+
+/* ── Plan Form ── */
+.plan-form {
+    background: var(--bg-card); border-radius: 12px; padding: 24px; border: 1px solid var(--border);
+}
+.plan-form h2 { font-size: 18px; color: #fff; margin-bottom: 16px; }
+.plan-form-group { margin-bottom: 16px; }
+.plan-form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.plan-form-group input, .plan-form-group textarea {
+    width: 100%; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; color: var(--text-primary); font-size: 13px; font-family: inherit; box-sizing: border-box;
+}
+.plan-form-group input:focus, .plan-form-group textarea:focus { outline: none; border-color: var(--accent); }
+.plan-form-group textarea { resize: vertical; min-height: 150px; line-height: 1.6; }
+
+/* Target rows */
+.plan-target-rows { margin-bottom: 12px; }
+.plan-target-row {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 6px;
+}
+.plan-target-row input { flex: 1; }
+.plan-target-row .btn-remove {
+    background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 18px; padding: 4px 8px;
+}
+.plan-target-row .btn-remove:hover { color: #ef4444; }
+
+/* ── Plan Review Layout ── */
+.plan-review {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; min-height: 400px;
+}
+@media (max-width: 900px) { .plan-review { grid-template-columns: 1fr; } }
+
+.plan-spec-panel {
+    background: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border);
+    max-height: calc(100vh - 300px); overflow-y: auto;
+}
+.plan-spec-panel h3 { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
+
+.plan-tasks-panel {
+    background: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border);
+    max-height: calc(100vh - 300px); overflow-y: auto;
+}
+.plan-tasks-panel h3 { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
+
+/* ── Task Flow (Plan Monitor) ── */
+.task-flow { display: flex; flex-direction: column; gap: 6px; }
+.task-flow-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: var(--bg-panel); border-radius: 8px; border: 1px solid var(--border);
+    cursor: pointer; transition: 0.15s;
+}
+.task-flow-item:hover { border-color: var(--accent); }
+.task-flow-item.active { border-color: var(--accent); background: rgba(88,166,255,0.05); }
+.task-flow-icon { font-size: 16px; width: 24px; text-align: center; flex-shrink: 0; }
+.task-flow-title { flex: 1; font-size: 13px; color: var(--text-primary); }
+.task-flow-target { font-size: 10px; }
+.task-flow-time { font-size: 11px; color: var(--text-tertiary); }
+
+/* ── Plan Monitor Layout ── */
+.plan-monitor {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; min-height: 400px;
+}
+@media (max-width: 900px) { .plan-monitor { grid-template-columns: 1fr; } }
+
+.plan-monitor-left {
+    background: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border);
+    max-height: calc(100vh - 300px); overflow-y: auto;
+}
+
+.plan-monitor-right {
+    background: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border);
+    max-height: calc(100vh - 300px); overflow-y: auto; display: flex; flex-direction: column;
+}
+
+.plan-progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.plan-progress-bar {
+    height: 6px; background: var(--bg-panel); border-radius: 3px; overflow: hidden; margin-bottom: 16px;
+}
+.plan-progress-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent), #a78bfa); border-radius: 3px; transition: width 0.5s;
+}
+
+/* Plan detail output area */
+.plan-output-area {
+    flex: 1; background: var(--bg-page); border-radius: 8px; padding: 14px;
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 11px; line-height: 1.6;
+    overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary);
+}
 """
 
 _BODY = """
 <div class="container">
     <div class="top-bar">
         <div style="display:flex;align-items:center;gap:12px;">
-            <h1>Claude Pilot</h1>
+            <h1 style="cursor:pointer" onclick="navigate('tasks')">Claude Pilot</h1>
             <span id="statusDot" class="status-dot stopped"></span>
             <span id="statusLabel" style="color:#888;font-size:13px;">Stopped</span>
             <span id="workingText" class="working-text" style="display:none;"></span>
@@ -635,6 +770,19 @@ _BODY = """
         </div>
     </div>
 
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs" id="navTabs">
+        <button class="nav-tab active" data-view="tasks" onclick="navigate('tasks')">Quick Tasks</button>
+        <button class="nav-tab" data-view="plans" onclick="navigate('plans')">Plans</button>
+    </div>
+
+    <!-- Plans View (hidden by default) -->
+    <div id="viewPlans" style="display:none;">
+        <div id="planViewContent"></div>
+    </div>
+
+    <!-- Tasks View -->
+    <div id="viewTasks">
     <div class="add-form" id="addForm">
         <input id="addTitle" placeholder="Task title..." onkeydown="if(event.key==='Enter')addTask()">
         <div class="form-row">
@@ -662,6 +810,7 @@ _BODY = """
     </div>
     <div class="label-filter-bar" id="labelFilterBar"></div>
     <div class="kanban" id="kanbanBoard"></div>
+    </div><!-- /viewTasks -->
 </div>
 
 <!-- Slide Panel -->
@@ -1856,6 +2005,409 @@ function sectionHtml(key, title, content) {
     </div>`;
 }
 
+// ── Hash Router ──
+
+let currentView = 'tasks';
+let currentPlanId = null;
+
+function navigate(route) {
+    if(route === 'tasks') {
+        window.location.hash = '#tasks';
+    } else if(route === 'plans') {
+        window.location.hash = '#plans';
+    } else if(route.startsWith('plans/new')) {
+        window.location.hash = '#plans/new';
+    } else if(route.startsWith('plans/')) {
+        window.location.hash = '#' + route;
+    }
+}
+
+function handleRoute() {
+    const hash = window.location.hash.slice(1) || 'tasks';
+    const parts = hash.split('/');
+
+    // Update nav tabs
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        const view = tab.getAttribute('data-view');
+        tab.classList.toggle('active', hash.startsWith(view));
+    });
+
+    if(hash === 'tasks' || hash === '') {
+        showView('tasks');
+        currentView = 'tasks';
+    } else if(hash === 'plans') {
+        showView('plans');
+        currentView = 'plans';
+        renderPlanList();
+    } else if(hash === 'plans/new') {
+        showView('plans');
+        currentView = 'plans';
+        renderPlanCreate();
+    } else if(parts[0] === 'plans' && parts[1]) {
+        showView('plans');
+        currentView = 'plans';
+        currentPlanId = parseInt(parts[1]);
+        loadPlanDetail(currentPlanId);
+    }
+}
+
+function showView(view) {
+    document.getElementById('viewTasks').style.display = view === 'tasks' ? '' : 'none';
+    document.getElementById('viewPlans').style.display = view === 'plans' ? '' : 'none';
+}
+
+window.addEventListener('hashchange', handleRoute);
+
+// ── Plan List ──
+
+let allPlans = [];
+
+async function loadPlans() {
+    try {
+        const res = await fetch('/api/plans');
+        allPlans = await res.json();
+    } catch(e) { console.error('loadPlans', e); }
+}
+
+function renderPlanList() {
+    const content = document.getElementById('planViewContent');
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:#666">Loading plans...</div>';
+    loadPlans().then(() => {
+        let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
+        html += '<h2 style="color:#fff;font-size:18px;margin:0;">Plans</h2>';
+        html += '<button class="btn btn-blue" onclick="navigate(\'plans/new\')">+ New Plan</button>';
+        html += '</div>';
+
+        if(allPlans.length === 0) {
+            html += '<div style="text-align:center;padding:60px;color:#666;font-style:italic;">No plans yet. Create one to get started.</div>';
+        } else {
+            // Group by status
+            const groups = [
+                {label:'Running', statuses:['running','decomposing']},
+                {label:'Review', statuses:['reviewing','approved']},
+                {label:'Draft', statuses:['draft']},
+                {label:'Completed', statuses:['completed']},
+                {label:'Failed', statuses:['failed']},
+            ];
+            for(const g of groups) {
+                const plans = allPlans.filter(p => g.statuses.includes(p.status));
+                if(plans.length === 0) continue;
+                html += `<div style="margin-bottom:16px;">`;
+                html += `<div style="font-size:12px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:8px;">${g.label} (${plans.length})</div>`;
+                for(const p of plans) {
+                    const targets = Object.keys(p.targets || {});
+                    const targetBadges = targets.map(t => `<span class="target-badge">${esc(t)}</span>`).join('');
+                    html += `<div class="plan-card" onclick="navigate('plans/${p.id}')">
+                        <div class="plan-card-header">
+                            <span class="plan-card-title">${esc(p.title)}</span>
+                            <span class="plan-status plan-status-${p.status}">${p.status}</span>
+                        </div>
+                        <div class="plan-card-meta">
+                            <span>#${p.id}</span>
+                            <span class="time-relative" data-time="${esc(p.updated_at)}" title="${fmtAbsolute(p.updated_at)}">${timeAgo(p.updated_at)}</span>
+                        </div>
+                        ${targets.length > 0 ? `<div class="plan-card-targets">${targetBadges}</div>` : ''}
+                    </div>`;
+                }
+                html += '</div>';
+            }
+        }
+        content.innerHTML = html;
+    });
+}
+
+// ── Plan Create ──
+
+let planTargetCount = 1;
+
+function renderPlanCreate() {
+    planTargetCount = 1;
+    const content = document.getElementById('planViewContent');
+    content.innerHTML = `
+    <div class="plan-form">
+        <h2>New Plan</h2>
+        <div class="plan-form-group">
+            <label>Title</label>
+            <input id="planTitle" placeholder="e.g., User Authentication System">
+        </div>
+        <div class="plan-form-group">
+            <label>Targets (project directories)</label>
+            <div class="plan-target-rows" id="planTargetRows">
+                <div class="plan-target-row">
+                    <input placeholder="Name (e.g., backend)" class="plan-target-name">
+                    <input placeholder="Path (e.g., /path/to/project)" class="plan-target-path">
+                    <button class="btn-remove" onclick="this.parentElement.remove()">&times;</button>
+                </div>
+            </div>
+            <button class="btn btn-gray btn-sm" onclick="addPlanTargetRow()">+ Add Target</button>
+        </div>
+        <div class="plan-form-group">
+            <label>Specification</label>
+            <textarea id="planSpec" placeholder="Describe what you want to build..."></textarea>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button class="btn btn-blue" onclick="submitPlan()">Create & Decompose</button>
+            <button class="btn btn-gray" onclick="navigate('plans')">Cancel</button>
+        </div>
+    </div>`;
+}
+
+function addPlanTargetRow() {
+    const rows = document.getElementById('planTargetRows');
+    const row = document.createElement('div');
+    row.className = 'plan-target-row';
+    row.innerHTML = `
+        <input placeholder="Name (e.g., frontend)" class="plan-target-name">
+        <input placeholder="Path (e.g., /path/to/project)" class="plan-target-path">
+        <button class="btn-remove" onclick="this.parentElement.remove()">&times;</button>`;
+    rows.appendChild(row);
+}
+
+async function submitPlan() {
+    const title = document.getElementById('planTitle').value.trim();
+    if(!title) { showToast('Title is required', 'error'); return; }
+
+    const spec = document.getElementById('planSpec').value.trim();
+    const targets = {};
+    document.querySelectorAll('.plan-target-row').forEach(row => {
+        const name = row.querySelector('.plan-target-name').value.trim();
+        const path = row.querySelector('.plan-target-path').value.trim();
+        if(name && path) targets[name] = {project: path};
+    });
+
+    try {
+        const res = await fetch('/api/plans', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({title, spec, targets})
+        });
+        const plan = await res.json();
+        showToast('Plan created', 'success');
+
+        // Auto-decompose
+        if(spec) {
+            await fetch(`/api/plans/${plan.id}/decompose`, {method: 'POST'});
+            showToast('Decomposition started...', 'info');
+        }
+
+        navigate(`plans/${plan.id}`);
+    } catch(e) {
+        showToast('Failed to create plan', 'error');
+    }
+}
+
+// ── Plan Detail ──
+
+let planPollTimer = null;
+
+async function loadPlanDetail(planId) {
+    const content = document.getElementById('planViewContent');
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:#666">Loading...</div>';
+
+    try {
+        const res = await fetch(`/api/plans/${planId}`);
+        if(!res.ok) { content.innerHTML = '<div style="color:#ef4444;padding:40px;text-align:center;">Plan not found</div>'; return; }
+        const plan = await res.json();
+
+        if(plan.status === 'reviewing' || plan.status === 'draft' || plan.status === 'approved') {
+            renderPlanReview(plan);
+        } else {
+            renderPlanMonitor(plan);
+        }
+
+        // Poll for updates if running/decomposing
+        if(planPollTimer) clearInterval(planPollTimer);
+        if(['running','decomposing'].includes(plan.status)) {
+            planPollTimer = setInterval(() => {
+                if(currentView !== 'plans' || !currentPlanId) { clearInterval(planPollTimer); return; }
+                loadPlanDetail(planId);
+            }, 3000);
+        }
+    } catch(e) {
+        content.innerHTML = '<div style="color:#ef4444;padding:40px;text-align:center;">Failed to load plan</div>';
+    }
+}
+
+function renderPlanReview(plan) {
+    const content = document.getElementById('planViewContent');
+    const tasks = plan.tasks || [];
+    const targets = Object.keys(plan.targets || {});
+
+    let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <button class="btn btn-gray btn-sm" onclick="navigate('plans')">&larr; Back</button>
+            <h2 style="color:#fff;font-size:18px;margin:0;">${esc(plan.title)}</h2>
+            <span class="plan-status plan-status-${plan.status}">${plan.status}</span>
+        </div>
+        <div style="display:flex;gap:8px;">`;
+
+    if(plan.status === 'reviewing') {
+        html += `<button class="btn btn-green" onclick="approvePlan(${plan.id})">Approve &amp; Run</button>`;
+        html += `<button class="btn btn-blue" onclick="redecomposePlan(${plan.id})">Re-decompose</button>`;
+    }
+    if(['draft','reviewing'].includes(plan.status)) {
+        html += `<button class="btn btn-red btn-sm" onclick="deletePlan(${plan.id})">Delete</button>`;
+    }
+    html += `</div></div>`;
+
+    html += '<div class="plan-review">';
+
+    // Left: spec
+    html += `<div class="plan-spec-panel">
+        <h3>Specification</h3>
+        <div class="sp-desc">${plan.spec ? renderMarkdown(plan.spec) : '<em style="color:#666">No specification provided</em>'}</div>
+    </div>`;
+
+    // Right: tasks
+    html += `<div class="plan-tasks-panel">
+        <h3>Tasks (${tasks.length})</h3>`;
+
+    if(tasks.length === 0) {
+        if(plan.status === 'decomposing') {
+            html += '<div style="text-align:center;padding:40px;color:#a78bfa;">Decomposing specification into tasks...</div>';
+        } else {
+            html += '<div style="text-align:center;padding:40px;color:#666;font-style:italic;">No tasks yet</div>';
+        }
+    } else {
+        html += '<div class="task-flow" id="planTaskFlow">';
+        tasks.forEach((t, i) => {
+            const icon = t.status === 'done' ? '&#x2705;' : t.status === 'in_progress' ? '&#x1F504;' : t.status === 'failed' ? '&#x274C;' : '&#x23F3;';
+            html += `<div class="task-flow-item" data-task-id="${t.id}">
+                <span class="task-flow-icon">${icon}</span>
+                <span class="task-flow-title">${esc(t.title)}</span>
+                ${t.target ? `<span class="task-flow-target target-badge">${esc(t.target)}</span>` : ''}
+            </div>`;
+        });
+        html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>'; // /plan-review
+
+    content.innerHTML = html;
+}
+
+function renderPlanMonitor(plan) {
+    const content = document.getElementById('planViewContent');
+    const tasks = plan.tasks || [];
+    const doneCount = tasks.filter(t => t.status === 'done').length;
+    const failedCount = tasks.filter(t => t.status === 'failed').length;
+    const total = tasks.length;
+    const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+
+    let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <button class="btn btn-gray btn-sm" onclick="navigate('plans')">&larr; Back</button>
+            <h2 style="color:#fff;font-size:18px;margin:0;">${esc(plan.title)}</h2>
+            <span class="plan-status plan-status-${plan.status}">${plan.status}</span>
+        </div>
+        <div style="display:flex;gap:8px;">`;
+
+    if(plan.status === 'running') {
+        html += `<button class="btn btn-red" onclick="stopPlan(${plan.id})">Stop</button>`;
+    }
+    html += `</div></div>`;
+
+    // Progress bar
+    html += `<div class="plan-progress-header">
+        <span style="font-size:13px;color:#fff;">${pct}% complete</span>
+        <span style="font-size:12px;color:#666;">${doneCount}/${total} tasks done${failedCount > 0 ? `, ${failedCount} failed` : ''}</span>
+    </div>
+    <div class="plan-progress-bar"><div class="plan-progress-fill" style="width:${pct}%"></div></div>`;
+
+    html += '<div class="plan-monitor">';
+
+    // Left: task flow
+    html += `<div class="plan-monitor-left">
+        <h3 style="font-size:14px;color:#888;margin-bottom:12px;">Task Progress</h3>
+        <div class="task-flow">`;
+    tasks.forEach(t => {
+        const icon = t.status === 'done' ? '&#x2705;' : t.status === 'in_progress' ? '&#x1F504;' : t.status === 'failed' ? '&#x274C;' : '&#x23F3;';
+        const elapsed = getElapsed(t);
+        const costStr = t.cost_usd ? `$${t.cost_usd.toFixed(4)}` : '';
+        const meta = [elapsed, costStr].filter(Boolean).join(' · ');
+        html += `<div class="task-flow-item${t.status === 'in_progress' ? ' active' : ''}" onclick="showPlanTaskOutput(${t.id})">
+            <span class="task-flow-icon">${icon}</span>
+            <span class="task-flow-title">${esc(t.title)}</span>
+            ${t.target ? `<span class="task-flow-target target-badge">${esc(t.target)}</span>` : ''}
+            ${meta ? `<span class="task-flow-time">${meta}</span>` : ''}
+        </div>`;
+    });
+    html += '</div></div>';
+
+    // Right: output area
+    html += `<div class="plan-monitor-right">
+        <h3 style="font-size:14px;color:#888;margin-bottom:12px;">Task Output</h3>
+        <div class="plan-output-area" id="planOutputArea">
+            <div style="color:#666;font-style:italic;text-align:center;padding:40px;">Click a task to view its output</div>
+        </div>
+    </div>`;
+
+    html += '</div>'; // /plan-monitor
+
+    content.innerHTML = html;
+}
+
+async function showPlanTaskOutput(taskId) {
+    const area = document.getElementById('planOutputArea');
+    if(!area) return;
+    area.innerHTML = 'Loading...';
+
+    // Highlight active
+    document.querySelectorAll('.task-flow-item').forEach(el => {
+        el.classList.toggle('active', el.getAttribute('onclick')?.includes(taskId));
+    });
+
+    try {
+        const res = await fetch(`/api/tasks/${taskId}/logs`);
+        const logs = await res.json();
+        if(logs.length > 0) {
+            area.innerHTML = logs.map(l => {
+                const ts = l.timestamp ? fmtTime(l.timestamp) : '';
+                return `<div class="log-line"><span class="log-time">${ts}</span> [${l.level}] ${esc(l.message)}</div>`;
+            }).join('');
+        } else {
+            area.innerHTML = '<div style="color:#666;font-style:italic;">No logs for this task</div>';
+        }
+    } catch(e) {
+        area.innerHTML = '<div style="color:#ef4444;">Failed to load logs</div>';
+    }
+}
+
+// ── Plan Actions ──
+
+async function approvePlan(planId) {
+    try {
+        await fetch(`/api/plans/${planId}/approve`, {method: 'POST'});
+        showToast('Plan approved — execution started', 'success');
+        loadPlanDetail(planId);
+    } catch(e) { showToast('Failed to approve plan', 'error'); }
+}
+
+async function redecomposePlan(planId) {
+    try {
+        await fetch(`/api/plans/${planId}/decompose`, {method: 'POST'});
+        showToast('Re-decomposition started...', 'info');
+        loadPlanDetail(planId);
+    } catch(e) { showToast('Failed to re-decompose', 'error'); }
+}
+
+async function stopPlan(planId) {
+    try {
+        await fetch(`/api/plans/${planId}/stop`, {method: 'POST'});
+        showToast('Plan stopped', 'info');
+        loadPlanDetail(planId);
+    } catch(e) { showToast('Failed to stop plan', 'error'); }
+}
+
+async function deletePlan(planId) {
+    if(!confirm('Delete this plan and all its tasks?')) return;
+    try {
+        await fetch(`/api/plans/${planId}`, {method: 'DELETE'});
+        showToast('Plan deleted', 'info');
+        navigate('plans');
+    } catch(e) { showToast('Failed to delete plan', 'error'); }
+}
+
 // ── Init ──
 renderSkeletonBoard();
 loadTasks();
@@ -1863,6 +2415,7 @@ pollStatus();
 setInterval(pollStatus, 3000);
 setInterval(refreshTimeAgo, 30000);
 ensureSSE();
+handleRoute();
 """
 
 

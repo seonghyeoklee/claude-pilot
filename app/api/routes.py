@@ -5,13 +5,20 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel as _PydanticBase
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent import AgentWorker
 from app.database import Database
-from pydantic import BaseModel as _PydanticBase
-
-from app.models import ApprovalRequest, TaskCreate, TaskStatus, TaskUpdate
+from app.models import (
+    ApprovalRequest,
+    PlanCreate,
+    PlanStatus,
+    PlanUpdate,
+    TaskCreate,
+    TaskStatus,
+    TaskUpdate,
+)
 
 router = APIRouter()
 
@@ -30,7 +37,7 @@ def _get_agent(request: Request) -> AgentWorker:
 @router.get("/api/tasks")
 async def list_tasks(status: str | None = None, label: str | None = None, q: str | None = None, db: Database = Depends(_get_db)):
     task_status = TaskStatus(status) if status else None
-    tasks = await db.list_tasks(task_status, label=label, search=q)
+    tasks = await db.list_tasks(task_status, label=label, search=q, plan_id=None)
     return [t.model_dump() for t in tasks]
 
 
@@ -75,7 +82,9 @@ async def run_task(task_id: int, db: Database = Depends(_get_db), agent: AgentWo
     task = await db.get_task(task_id)
     if not task:
         raise HTTPException(404, "Task not found")
-    asyncio.create_task(agent.run_task(task_id))
+    ok = await agent.schedule_task(task_id)
+    if not ok:
+        raise HTTPException(409, "Agent is busy or task not runnable")
     return {"ok": True, "task_id": task_id}
 
 
@@ -135,3 +144,94 @@ async def agent_logs(agent: AgentWorker = Depends(_get_agent)):
 @router.get("/api/agent/output")
 async def agent_output(agent: AgentWorker = Depends(_get_agent)):
     return {"output": agent.get_current_output()}
+
+
+# ── Plans ──
+
+
+@router.post("/api/plans", status_code=201)
+async def create_plan(data: PlanCreate, db: Database = Depends(_get_db)):
+    plan = await db.create_plan(data)
+    return plan.model_dump()
+
+
+@router.get("/api/plans")
+async def list_plans(status: str | None = None, db: Database = Depends(_get_db)):
+    plan_status = PlanStatus(status) if status else None
+    plans = await db.list_plans(plan_status)
+    return [p.model_dump() for p in plans]
+
+
+@router.get("/api/plans/{plan_id}")
+async def get_plan(plan_id: int, db: Database = Depends(_get_db)):
+    plan = await db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    tasks = await db.get_plan_tasks(plan_id)
+    result = plan.model_dump()
+    result["tasks"] = [t.model_dump() for t in tasks]
+    return result
+
+
+@router.patch("/api/plans/{plan_id}")
+async def update_plan(plan_id: int, data: PlanUpdate, db: Database = Depends(_get_db)):
+    plan = await db.update_plan(plan_id, data)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return plan.model_dump()
+
+
+@router.delete("/api/plans/{plan_id}")
+async def delete_plan(plan_id: int, db: Database = Depends(_get_db)):
+    ok = await db.delete_plan(plan_id)
+    if not ok:
+        raise HTTPException(404, "Plan not found")
+    return {"ok": True}
+
+
+@router.post("/api/plans/{plan_id}/decompose")
+async def decompose_plan(plan_id: int, db: Database = Depends(_get_db), agent: AgentWorker = Depends(_get_agent)):
+    plan = await db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    if plan.status not in (PlanStatus.DRAFT, PlanStatus.REVIEWING):
+        raise HTTPException(409, f"Plan cannot be decomposed in '{plan.status.value}' status")
+    asyncio.create_task(agent.decompose_plan(plan_id))
+    return {"ok": True, "plan_id": plan_id}
+
+
+@router.post("/api/plans/{plan_id}/approve")
+async def approve_plan(plan_id: int, db: Database = Depends(_get_db), agent: AgentWorker = Depends(_get_agent)):
+    plan = await db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    if plan.status != PlanStatus.REVIEWING:
+        raise HTTPException(409, f"Plan cannot be approved in '{plan.status.value}' status")
+    await db.set_plan_status(plan_id, PlanStatus.APPROVED)
+    asyncio.create_task(agent.run_plan(plan_id))
+    return {"ok": True, "plan_id": plan_id}
+
+
+@router.post("/api/plans/{plan_id}/stop")
+async def stop_plan(plan_id: int, db: Database = Depends(_get_db), agent: AgentWorker = Depends(_get_agent)):
+    plan = await db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    if plan.status != PlanStatus.RUNNING:
+        raise HTTPException(409, f"Plan is not running")
+    agent._stop_requested = True
+    await db.set_plan_status(plan_id, PlanStatus.FAILED)
+    return {"ok": True}
+
+
+class ReorderRequest(_PydanticBase):
+    task_ids: list[int]
+
+
+@router.post("/api/plans/{plan_id}/tasks/reorder")
+async def reorder_plan_tasks(plan_id: int, body: ReorderRequest, db: Database = Depends(_get_db)):
+    plan = await db.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    await db.reorder_plan_tasks(plan_id, body.task_ids)
+    return {"ok": True}

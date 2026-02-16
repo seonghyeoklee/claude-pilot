@@ -7,7 +7,19 @@ from pathlib import Path
 
 import aiosqlite
 
-from app.models import LogEntry, LogLevel, Task, TaskCreate, TaskStatus, TaskUpdate, _now_iso
+from app.models import (
+    LogEntry,
+    LogLevel,
+    Plan,
+    PlanCreate,
+    PlanStatus,
+    PlanUpdate,
+    Task,
+    TaskCreate,
+    TaskStatus,
+    TaskUpdate,
+    _now_iso,
+)
 
 _CREATE_LOGS_TABLE = """
 CREATE TABLE IF NOT EXISTS logs (
@@ -41,6 +53,18 @@ CREATE TABLE IF NOT EXISTS tasks (
 )
 """
 
+_CREATE_PLANS_TABLE = """
+CREATE TABLE IF NOT EXISTS plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    spec TEXT DEFAULT '',
+    targets TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'draft',
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
 
 class Database:
     def __init__(self, db_path: str = "data/tasks.db") -> None:
@@ -53,6 +77,7 @@ class Database:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute(_CREATE_TABLE)
         await self._db.execute(_CREATE_LOGS_TABLE)
+        await self._db.execute(_CREATE_PLANS_TABLE)
         await self._db.commit()
         # Migrate: add labels column if missing
         async with self._db.execute("PRAGMA table_info(tasks)") as cur:
@@ -66,6 +91,11 @@ class Database:
             await self._db.commit()
         if "retry_count" not in cols:
             await self._db.execute("ALTER TABLE tasks ADD COLUMN retry_count INTEGER DEFAULT 0")
+            await self._db.commit()
+        if "plan_id" not in cols:
+            await self._db.execute("ALTER TABLE tasks ADD COLUMN plan_id INTEGER")
+            await self._db.execute("ALTER TABLE tasks ADD COLUMN target TEXT DEFAULT ''")
+            await self._db.execute("ALTER TABLE tasks ADD COLUMN task_order INTEGER DEFAULT 0")
             await self._db.commit()
 
     async def close(self) -> None:
@@ -92,7 +122,8 @@ class Database:
             row = await cur.fetchone()
             return self._row_to_task(row) if row else None
 
-    async def list_tasks(self, status: TaskStatus | None = None, label: str | None = None, search: str | None = None) -> list[Task]:
+    async def list_tasks(self, status: TaskStatus | None = None, label: str | None = None, search: str | None = None, *, plan_id: int | None | str = "unset") -> list[Task]:
+        # plan_id filtering: "unset" = no filter, None = quick tasks only, int = specific plan
         # 정렬: 활성(in_progress/waiting) → pending → 완료(done/failed), 각 그룹 내 priority DESC
         order = """ORDER BY
             CASE status
@@ -106,6 +137,13 @@ class Database:
             priority DESC, created_at ASC"""
         conditions: list[str] = []
         params: list = []
+        if plan_id == "unset":
+            pass  # no plan filter
+        elif plan_id is None:
+            conditions.append("plan_id IS NULL")
+        else:
+            conditions.append("plan_id = ?")
+            params.append(plan_id)
         if status:
             conditions.append("status = ?")
             params.append(status.value)
@@ -161,7 +199,7 @@ class Database:
 
     async def pick_next_pending(self, min_priority: int = 0) -> Task | None:
         async with self._db.execute(
-            "SELECT * FROM tasks WHERE status = ? AND priority >= ? ORDER BY priority DESC, created_at ASC LIMIT 1",
+            "SELECT * FROM tasks WHERE status = ? AND priority >= ? AND plan_id IS NULL ORDER BY priority DESC, created_at ASC LIMIT 1",
             (TaskStatus.PENDING.value, min_priority),
         ) as cur:
             row = await cur.fetchone()
@@ -250,6 +288,118 @@ class Database:
         )
         await self._db.commit()
         return cursor.rowcount
+
+    # ── Plans ──
+
+    def _row_to_plan(self, row: aiosqlite.Row) -> Plan:
+        d = dict(row)
+        d["targets"] = json.loads(d.get("targets") or "{}")
+        return Plan(**d)
+
+    async def create_plan(self, data: PlanCreate) -> Plan:
+        now = _now_iso()
+        cursor = await self._db.execute(
+            "INSERT INTO plans (title, spec, targets, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (data.title, data.spec, json.dumps(data.targets), PlanStatus.DRAFT.value, now, now),
+        )
+        await self._db.commit()
+        return await self.get_plan(cursor.lastrowid)
+
+    async def get_plan(self, plan_id: int) -> Plan | None:
+        async with self._db.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)) as cur:
+            row = await cur.fetchone()
+            return self._row_to_plan(row) if row else None
+
+    async def list_plans(self, status: PlanStatus | None = None) -> list[Plan]:
+        if status:
+            sql = "SELECT * FROM plans WHERE status = ? ORDER BY created_at DESC"
+            params: tuple = (status.value,)
+        else:
+            sql = "SELECT * FROM plans ORDER BY created_at DESC"
+            params = ()
+        async with self._db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_plan(r) for r in rows]
+
+    async def update_plan(self, plan_id: int, data: PlanUpdate) -> Plan | None:
+        plan = await self.get_plan(plan_id)
+        if not plan:
+            return None
+        updates: list[str] = []
+        values: list = []
+        if data.title is not None:
+            updates.append("title = ?")
+            values.append(data.title)
+        if data.spec is not None:
+            updates.append("spec = ?")
+            values.append(data.spec)
+        if data.targets is not None:
+            updates.append("targets = ?")
+            values.append(json.dumps(data.targets))
+        if data.status is not None:
+            updates.append("status = ?")
+            values.append(data.status.value)
+        if not updates:
+            return plan
+        updates.append("updated_at = ?")
+        values.append(_now_iso())
+        values.append(plan_id)
+        await self._db.execute(
+            f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", values
+        )
+        await self._db.commit()
+        return await self.get_plan(plan_id)
+
+    async def delete_plan(self, plan_id: int) -> bool:
+        cursor = await self._db.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+        await self._db.commit()
+        return cursor.rowcount > 0
+
+    async def set_plan_status(self, plan_id: int, status: PlanStatus) -> None:
+        now = _now_iso()
+        await self._db.execute(
+            "UPDATE plans SET status = ?, updated_at = ? WHERE id = ?",
+            (status.value, now, plan_id),
+        )
+        await self._db.commit()
+
+    # ── Plan Tasks ──
+
+    async def get_plan_tasks(self, plan_id: int) -> list[Task]:
+        async with self._db.execute(
+            "SELECT * FROM tasks WHERE plan_id = ? ORDER BY task_order ASC, id ASC",
+            (plan_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_task(r) for r in rows]
+
+    async def create_plan_task(
+        self, plan_id: int, title: str, description: str, target: str, task_order: int
+    ) -> Task:
+        now = _now_iso()
+        cursor = await self._db.execute(
+            "INSERT INTO tasks (title, description, priority, status, labels, created_at, updated_at, plan_id, target, task_order) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (title, description, 1, TaskStatus.PENDING.value, "[]", now, now, plan_id, target, task_order),
+        )
+        await self._db.commit()
+        return await self.get_task(cursor.lastrowid)
+
+    async def reorder_plan_tasks(self, plan_id: int, task_ids: list[int]) -> None:
+        for order, tid in enumerate(task_ids):
+            await self._db.execute(
+                "UPDATE tasks SET task_order = ?, updated_at = ? WHERE id = ? AND plan_id = ?",
+                (order, _now_iso(), tid, plan_id),
+            )
+        await self._db.commit()
+
+    async def pick_next_plan_task(self, plan_id: int) -> Task | None:
+        async with self._db.execute(
+            "SELECT * FROM tasks WHERE plan_id = ? AND status = ? ORDER BY task_order ASC, id ASC LIMIT 1",
+            (plan_id, TaskStatus.PENDING.value),
+        ) as cur:
+            row = await cur.fetchone()
+            return self._row_to_task(row) if row else None
 
     # ── Logs ──
 

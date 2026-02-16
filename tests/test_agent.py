@@ -13,7 +13,7 @@ import pytest
 from app.agent import AgentWorker
 from app.config import AppConfig
 from app.database import Database
-from app.models import AgentState, LogLevel, TaskCreate, TaskStatus
+from app.models import AgentState, LogLevel, PlanCreate, PlanStatus, TaskCreate, TaskStatus
 
 
 @pytest.fixture
@@ -426,3 +426,166 @@ async def test_stream_json_parsing(mock_exec, setup):
     assert LogLevel.CLAUDE in levels
     assert LogLevel.TOOL in levels
     assert LogLevel.RESULT in levels
+
+
+# ── Plan Tests ──
+
+
+@patch("app.agent.asyncio.create_subprocess_exec")
+async def test_decompose_plan(mock_exec, setup):
+    agent, db, _ = setup
+
+    plan = await db.create_plan(PlanCreate(
+        title="Auth System",
+        spec="Build login and signup",
+        targets={"backend": {"project": "/tmp"}},
+    ))
+
+    tasks_json = json.dumps([
+        {"title": "Setup DB schema", "description": "Create users table", "target": "backend"},
+        {"title": "Implement login API", "description": "POST /login", "target": "backend"},
+    ])
+    stdout = [
+        json.dumps({"type": "result", "result": tasks_json, "total_cost_usd": 0.01}),
+    ]
+    mock_exec.return_value = _make_mock_process(stdout, returncode=0)
+
+    result = await agent.decompose_plan(plan.id)
+    assert result is True
+
+    updated_plan = await db.get_plan(plan.id)
+    assert updated_plan.status == PlanStatus.REVIEWING
+
+    tasks = await db.get_plan_tasks(plan.id)
+    assert len(tasks) == 2
+    assert tasks[0].title == "Setup DB schema"
+    assert tasks[0].target == "backend"
+    assert tasks[1].title == "Implement login API"
+
+
+@patch("app.agent.asyncio.create_subprocess_exec")
+async def test_decompose_plan_failure(mock_exec, setup):
+    agent, db, _ = setup
+
+    plan = await db.create_plan(PlanCreate(title="Fail Plan", spec="bad spec"))
+
+    stdout = [json.dumps({"type": "error", "error": "Something broke"})]
+    mock_exec.return_value = _make_mock_process(stdout, returncode=1)
+
+    result = await agent.decompose_plan(plan.id)
+    assert result is False
+
+    updated_plan = await db.get_plan(plan.id)
+    assert updated_plan.status == PlanStatus.DRAFT  # rolled back
+
+
+@patch("app.agent.asyncio.create_subprocess_exec")
+async def test_run_plan_sequential(mock_exec, setup):
+    agent, db, _ = setup
+
+    plan = await db.create_plan(PlanCreate(
+        title="Sequential Plan",
+        targets={"be": {"project": "/tmp"}},
+    ))
+    await db.create_plan_task(plan.id, "Task A", "Do A", "be", 0)
+    await db.create_plan_task(plan.id, "Task B", "Do B", "be", 1)
+
+    stdout = [json.dumps({"type": "result", "result": "Done!", "total_cost_usd": 0.01})]
+    mock_exec.side_effect = [
+        _make_mock_process(stdout, returncode=0),
+        _make_mock_process(stdout, returncode=0),
+    ]
+
+    result = await agent.run_plan(plan.id)
+    assert result is True
+
+    updated_plan = await db.get_plan(plan.id)
+    assert updated_plan.status == PlanStatus.COMPLETED
+
+    tasks = await db.get_plan_tasks(plan.id)
+    assert all(t.status == TaskStatus.DONE for t in tasks)
+
+
+@patch("app.agent.asyncio.create_subprocess_exec")
+async def test_run_plan_stops_on_failure(mock_exec, setup):
+    agent, db, config = setup
+    config.max_retries = 0  # disable retries for this test
+
+    plan = await db.create_plan(PlanCreate(
+        title="Fail Plan",
+        targets={"be": {"project": "/tmp"}},
+    ))
+    await db.create_plan_task(plan.id, "Fails", "Broken", "be", 0)
+    await db.create_plan_task(plan.id, "Never runs", "Skip", "be", 1)
+
+    fail_stdout = [json.dumps({"type": "error", "error": "crash"})]
+    mock_exec.return_value = _make_mock_process(fail_stdout, returncode=1)
+
+    result = await agent.run_plan(plan.id)
+    assert result is False
+
+    updated_plan = await db.get_plan(plan.id)
+    assert updated_plan.status == PlanStatus.FAILED
+
+    tasks = await db.get_plan_tasks(plan.id)
+    assert tasks[0].status == TaskStatus.FAILED
+    assert tasks[1].status == TaskStatus.PENDING  # never executed
+
+
+async def test_build_prompt_with_prior_outputs(setup):
+    agent, _, _ = setup
+    prior = [
+        ("Setup DB", "Created users table successfully"),
+        ("Auth API", "Implemented login endpoint"),
+    ]
+    p = agent._build_prompt("Build UI", "Create login page", prior_outputs=prior)
+    assert "[Prior Task Outputs]" in p
+    assert "Setup DB" in p
+    assert "Created users table successfully" in p
+    assert "Auth API" in p
+    assert "Build UI" in p
+
+
+async def test_build_prompt_with_context_dir(setup):
+    """context_dir overrides target_project for loading context files."""
+    agent, _, config = setup
+    tmp = config.target_project
+
+    # Create files in a different dir
+    import os
+    alt_dir = os.path.join(tmp, "alt_project")
+    os.makedirs(alt_dir, exist_ok=True)
+    Path(alt_dir, "CLAUDE.md").write_text("# Alt Project")
+
+    p = agent._build_prompt("Fix bug", "", context_dir=alt_dir, context_files=["CLAUDE.md"])
+    assert "[Project Context]" in p
+    assert "# Alt Project" in p
+
+
+async def test_parse_json_from_output(setup):
+    agent, _, _ = setup
+
+    # Direct JSON array
+    result = agent._parse_json_from_output('[{"title":"A"}]')
+    assert result == [{"title": "A"}]
+
+    # JSON embedded in text
+    result = agent._parse_json_from_output('Here are the tasks:\n[{"title":"B"}]\nDone!')
+    assert result == [{"title": "B"}]
+
+    # JSON wrapped in markdown code fences
+    result = agent._parse_json_from_output('Here are the tasks:\n\n```json\n[{"title":"C","target":"backend"}]\n```\n')
+    assert result == [{"title": "C", "target": "backend"}]
+
+    # JSON wrapped in plain code fences (no language tag)
+    result = agent._parse_json_from_output('```\n[{"title":"D"}]\n```')
+    assert result == [{"title": "D"}]
+
+    # Duplicate output (assistant + result both contain same JSON)
+    dup_output = '```json\n[{"title":"E"}]\n```\n```json\n[{"title":"E"}]\n```'
+    result = agent._parse_json_from_output(dup_output)
+    assert result == [{"title": "E"}]
+
+    # Invalid JSON
+    result = agent._parse_json_from_output('not json at all')
+    assert result is None

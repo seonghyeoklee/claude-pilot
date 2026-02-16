@@ -1,4 +1,4 @@
-"""Task, AgentStatus, LogEntry 모델"""
+"""Task, Plan, AgentStatus, LogEntry 모델"""
 
 from __future__ import annotations
 
@@ -15,6 +15,16 @@ class TaskStatus(str, Enum):
     DONE = "done"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class PlanStatus(str, Enum):
+    DRAFT = "draft"
+    DECOMPOSING = "decomposing"
+    REVIEWING = "reviewing"
+    APPROVED = "approved"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class TaskPriority(int, Enum):
@@ -44,6 +54,10 @@ class Task(BaseModel):
     retry_count: int = 0
     branch_name: str = ""
     pr_url: str = ""
+    # Plan fields
+    plan_id: int | None = None
+    target: str = ""
+    task_order: int = 0
 
 
 class TaskCreate(BaseModel):
@@ -59,6 +73,29 @@ class TaskUpdate(BaseModel):
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
     labels: list[str] | None = None
+
+
+class Plan(BaseModel):
+    id: int = 0
+    title: str
+    spec: str = ""
+    targets: dict[str, dict] = Field(default_factory=dict)
+    status: PlanStatus = PlanStatus.DRAFT
+    created_at: str = Field(default_factory=lambda: _now_iso())
+    updated_at: str = Field(default_factory=lambda: _now_iso())
+
+
+class PlanCreate(BaseModel):
+    title: str
+    spec: str = ""
+    targets: dict[str, dict] = Field(default_factory=dict)
+
+
+class PlanUpdate(BaseModel):
+    title: str | None = None
+    spec: str | None = None
+    targets: dict[str, dict] | None = None
+    status: PlanStatus | None = None
 
 
 class AgentState(str, Enum):

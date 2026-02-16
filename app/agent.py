@@ -18,6 +18,7 @@ from app.models import (
     AgentStatus,
     LogEntry,
     LogLevel,
+    PlanStatus,
     TaskStatus,
     _now_iso,
 )
@@ -44,6 +45,7 @@ class AgentWorker:
         self._stop_requested = False
         self._proc: asyncio.subprocess.Process | None = None
         self._min_priority: int = 0  # 0=all, 1=Med+, 2=High+, 3=Urgent only
+        self._exec_lock = asyncio.Lock()  # serialize task execution
 
     # ── Status ──
 
@@ -138,14 +140,42 @@ class AgentWorker:
 
     # ── Run Single Task ──
 
-    async def run_task(self, task_id: int) -> None:
-        """Execute a single task (without the loop)."""
+    async def run_task(self, task_id: int) -> bool:
+        """Execute a single task (blocks until complete). Returns False if agent is busy."""
+        if self._exec_lock.locked():
+            return False
         task = await self.db.get_task(task_id)
         if not task:
-            return
+            return False
         if task.status not in (TaskStatus.PENDING, TaskStatus.FAILED):
+            return False
+        async with self._exec_lock:
+            await self._execute_task(task_id, task.title, task.description)
+        return True
+
+    async def schedule_task(self, task_id: int) -> bool:
+        """Schedule a task for background execution. Returns False if agent is busy."""
+        if self._exec_lock.locked():
+            return False
+        task = await self.db.get_task(task_id)
+        if not task:
+            return False
+        if task.status not in (TaskStatus.PENDING, TaskStatus.FAILED):
+            return False
+        bg = asyncio.create_task(self._run_task_with_lock(task_id, task.title, task.description))
+        bg.add_done_callback(self._on_bg_task_done)
+        return True
+
+    async def _run_task_with_lock(self, task_id: int, title: str, description: str) -> None:
+        async with self._exec_lock:
+            await self._execute_task(task_id, title, description)
+
+    def _on_bg_task_done(self, task: asyncio.Task) -> None:
+        if task.cancelled():
             return
-        await self._execute_task(task_id, task.title, task.description)
+        exc = task.exception()
+        if exc:
+            logger.error("Background task failed: %s", exc)
 
     # ── Internal Loop ──
 
@@ -157,7 +187,8 @@ class AgentWorker:
                     self._state = AgentState.IDLE
                     await asyncio.sleep(self.config.poll_interval)
                     continue
-                await self._execute_task(task.id, task.title, task.description)
+                async with self._exec_lock:
+                    await self._execute_task(task.id, task.title, task.description)
                 if self._stop_requested:
                     break
         except asyncio.CancelledError:
@@ -165,16 +196,26 @@ class AgentWorker:
         finally:
             self._state = AgentState.STOPPED
 
-    async def _execute_task(self, task_id: int, title: str, description: str) -> None:
+    async def _execute_task(
+        self,
+        task_id: int,
+        title: str,
+        description: str,
+        *,
+        cwd_override: str | None = None,
+        context_files_override: list[str] | None = None,
+        prior_outputs: list[tuple[str, str]] | None = None,
+    ) -> None:
         self._current_task_id = task_id
         self._current_task_title = title
         self._current_output = ""
         self._state = AgentState.RUNNING
 
+        run_cwd = cwd_override or self.config.target_project
         branch_name = ""
 
         # ── Gitflow: create feature branch ──
-        if self.config.gitflow:
+        if self.config.gitflow and not cwd_override:
             branch_name = await self._create_branch(task_id, title) or ""
             if not branch_name:
                 self._tasks_failed += 1
@@ -189,8 +230,14 @@ class AgentWorker:
         logger.info("Starting task #%d: %s", task_id, title)
 
         try:
-            prompt = self._build_prompt(title, description)
-            exit_code, output, cost = await self._run_claude(prompt, task_id)
+            prompt = self._build_prompt(
+                title,
+                description,
+                context_dir=cwd_override,
+                context_files=context_files_override,
+                prior_outputs=prior_outputs,
+            )
+            exit_code, output, cost = await self._run_claude(prompt, task_id, cwd=cwd_override)
         except Exception as exc:
             logger.exception("Unexpected error running task #%d", task_id)
             self._tasks_failed += 1
@@ -225,7 +272,12 @@ class AgentWorker:
                     await self._cleanup_branch(branch_name, task_id)
                 await asyncio.sleep(backoff)
                 if not self._stop_requested:
-                    await self._execute_task(task_id, title, description)
+                    await self._execute_task(
+                        task_id, title, description,
+                        cwd_override=cwd_override,
+                        context_files_override=context_files_override,
+                        prior_outputs=prior_outputs,
+                    )
                 return
 
             self._state = AgentState.IDLE
@@ -303,13 +355,14 @@ class AgentWorker:
 
     # ── Git Helpers ──
 
-    async def _git(self, *args: str, task_id: int | None = None) -> tuple[int, str]:
+    async def _git(self, *args: str, task_id: int | None = None, cwd: str | None = None) -> tuple[int, str]:
         """Run git command in target_project directory."""
+        run_cwd = cwd or self.config.target_project
         proc = await asyncio.create_subprocess_exec(
             "git", *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            cwd=self.config.target_project,
+            cwd=run_cwd,
         )
         stdout, _ = await proc.communicate()
         output = stdout.decode("utf-8", errors="replace").strip()
@@ -576,31 +629,250 @@ class AgentWorker:
         await self._git("checkout", self.config.base_branch, task_id=task_id)
         await self._git("branch", "-D", branch, task_id=task_id)
 
+    # ── Plan Decomposition + Execution ──
+
+    async def decompose_plan(self, plan_id: int) -> bool:
+        """Use Claude to decompose a plan's spec into tasks. Returns True on success."""
+        plan = await self.db.get_plan(plan_id)
+        if not plan:
+            return False
+
+        await self.db.set_plan_status(plan_id, PlanStatus.DECOMPOSING)
+        self._add_log(LogLevel.SYSTEM, f"Decomposing plan #{plan_id}: {plan.title}")
+
+        # Build context from each target's CLAUDE.md / context_files
+        target_context_parts: list[str] = []
+        for target_name, target_cfg in plan.targets.items():
+            project_path = target_cfg.get("project", "")
+            ctx_files = target_cfg.get("context_files", ["CLAUDE.md"])
+            if project_path:
+                base = Path(project_path)
+                for cf in ctx_files:
+                    fp = base / cf
+                    try:
+                        content = fp.read_text(encoding="utf-8")
+                        target_context_parts.append(f"### Target: {target_name} — {cf}\n{content}")
+                    except (OSError, UnicodeDecodeError):
+                        continue
+
+        target_context = "\n\n".join(target_context_parts)
+        target_names = ", ".join(plan.targets.keys()) if plan.targets else "(default)"
+
+        system_prompt = (
+            "You are a project planner. Given a specification and target project contexts, "
+            "decompose the spec into ordered implementation tasks.\n\n"
+            "RULES:\n"
+            "- Each task must have: title, description, target (which project)\n"
+            "- Tasks should be ordered logically (dependencies first)\n"
+            "- Be specific and actionable — each task should be completable in one Claude Code session\n"
+            "- Output ONLY valid JSON array, no other text\n\n"
+            f"Available targets: {target_names}\n\n"
+        )
+
+        if target_context:
+            system_prompt += f"[Target Project Contexts]\n{target_context[:8000]}\n[/Target Project Contexts]\n\n"
+
+        full_prompt = (
+            f"{system_prompt}"
+            f"## Specification\n\n{plan.spec}\n\n"
+            f"## Output Format\n\n"
+            f'Respond with ONLY a JSON array:\n'
+            f'[{{"title": "...", "description": "...", "target": "..."}}]\n'
+        )
+
+        # Use first target's project as cwd, or temp dir
+        first_target = next(iter(plan.targets.values()), {})
+        cwd = first_target.get("project", "") or None
+
+        try:
+            exit_code, output, cost = await self._run_claude(full_prompt, 0, cwd=cwd)
+        except Exception as exc:
+            self._add_log(LogLevel.ERROR, f"Plan decomposition failed: {exc}")
+            await self.db.set_plan_status(plan_id, PlanStatus.DRAFT)
+            return False
+
+        if exit_code != 0:
+            self._add_log(LogLevel.ERROR, f"Plan decomposition failed (exit={exit_code})")
+            await self.db.set_plan_status(plan_id, PlanStatus.DRAFT)
+            return False
+
+        # Parse JSON from output
+        tasks_data = self._parse_json_from_output(output)
+        if not tasks_data:
+            self._add_log(LogLevel.ERROR, "Failed to parse tasks JSON from decomposition output")
+            await self.db.set_plan_status(plan_id, PlanStatus.DRAFT)
+            return False
+
+        # Create tasks in DB
+        for order, td in enumerate(tasks_data):
+            title = td.get("title", f"Task {order + 1}")
+            desc = td.get("description", "")
+            target = td.get("target", "")
+            await self.db.create_plan_task(plan_id, title, desc, target, order)
+
+        self._add_log(LogLevel.SYSTEM, f"Plan #{plan_id} decomposed into {len(tasks_data)} tasks")
+        await self.db.set_plan_status(plan_id, PlanStatus.REVIEWING)
+        return True
+
+    def _parse_json_from_output(self, output: str) -> list[dict] | None:
+        """Extract JSON array from Claude output text."""
+        import re
+
+        # Try direct parse first
+        try:
+            data = json.loads(output.strip())
+            if isinstance(data, list):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Try extracting content from first markdown code fence (```json ... ```)
+        fence_match = re.search(r'```(?:json)?\s*\n([\s\S]*?)\n```', output)
+        if fence_match:
+            try:
+                data = json.loads(fence_match.group(1).strip())
+                if isinstance(data, list):
+                    return data
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # Try to find first valid JSON array in output
+        # Use balanced bracket counting to find the array boundary
+        start = output.find('[')
+        while start != -1:
+            depth = 0
+            in_string = False
+            escape = False
+            for i in range(start, len(output)):
+                c = output[i]
+                if escape:
+                    escape = False
+                    continue
+                if c == '\\' and in_string:
+                    escape = True
+                    continue
+                if c == '"' and not escape:
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if c == '[':
+                    depth += 1
+                elif c == ']':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = output[start:i + 1]
+                        try:
+                            data = json.loads(candidate)
+                            if isinstance(data, list):
+                                return data
+                        except (json.JSONDecodeError, ValueError):
+                            break
+            start = output.find('[', start + 1)
+
+        return None
+
+    async def run_plan(self, plan_id: int) -> bool:
+        """Execute all tasks in a plan sequentially. Returns True on success."""
+        plan = await self.db.get_plan(plan_id)
+        if not plan:
+            return False
+
+        await self.db.set_plan_status(plan_id, PlanStatus.RUNNING)
+        self._add_log(LogLevel.SYSTEM, f"Running plan #{plan_id}: {plan.title}")
+
+        prior_outputs: list[tuple[str, str]] = []
+
+        while not self._stop_requested:
+            task = await self.db.pick_next_plan_task(plan_id)
+            if not task:
+                break
+
+            # Resolve target config
+            target_cfg = plan.targets.get(task.target, {})
+            cwd = target_cfg.get("project", "") or None
+            ctx_files = target_cfg.get("context_files") if target_cfg else None
+
+            self._add_log(
+                LogLevel.SYSTEM,
+                f"Plan #{plan_id} — executing task #{task.id}: {task.title} (target: {task.target or 'default'})",
+            )
+
+            async with self._exec_lock:
+                await self._execute_task(
+                    task.id,
+                    task.title,
+                    task.description,
+                    cwd_override=cwd,
+                    context_files_override=ctx_files,
+                    prior_outputs=prior_outputs if prior_outputs else None,
+                )
+
+            # Check result
+            completed_task = await self.db.get_task(task.id)
+            if not completed_task or completed_task.status == TaskStatus.FAILED:
+                self._add_log(LogLevel.ERROR, f"Plan #{plan_id} failed at task #{task.id}")
+                await self.db.set_plan_status(plan_id, PlanStatus.FAILED)
+                return False
+
+            # Accumulate output for context chaining
+            if completed_task.output:
+                prior_outputs.append((completed_task.title, completed_task.output[-3000:]))
+
+        if self._stop_requested:
+            self._add_log(LogLevel.SYSTEM, f"Plan #{plan_id} stopped by user")
+            return False
+
+        self._add_log(LogLevel.SYSTEM, f"Plan #{plan_id} completed successfully")
+        await self.db.set_plan_status(plan_id, PlanStatus.COMPLETED)
+        return True
+
     _MAX_CONTEXT_BYTES = 10 * 1024  # 10KB limit for injected context
 
-    def _build_prompt(self, title: str, description: str) -> str:
+    def _build_prompt(
+        self,
+        title: str,
+        description: str,
+        *,
+        context_dir: str | None = None,
+        context_files: list[str] | None = None,
+        prior_outputs: list[tuple[str, str]] | None = None,
+    ) -> str:
         parts: list[str] = []
 
         # Inject project context files
-        context = self._load_context_files()
+        ctx_dir = context_dir or self.config.target_project
+        ctx_files = context_files if context_files is not None else self.config.context_files
+        context = self._load_context_files(base_dir=ctx_dir, files=ctx_files)
         if context:
             parts.append(context)
+
+        # Inject prior task outputs (context chaining)
+        if prior_outputs:
+            chain_parts: list[str] = []
+            for ptitle, poutput in prior_outputs:
+                chain_parts.append(f"### {ptitle}\n{poutput}")
+            chain = "\n\n---\n\n".join(chain_parts)
+            parts.append(f"[Prior Task Outputs]\n{chain}\n[/Prior Task Outputs]")
 
         parts.append(title)
         if description:
             parts.append(description)
         return "\n\n".join(parts)
 
-    def _load_context_files(self) -> str:
-        """Read context_files from target_project and return combined text."""
-        if not self.config.context_files:
+    def _load_context_files(
+        self, *, base_dir: str = "", files: list[str] | None = None
+    ) -> str:
+        """Read context_files from base_dir and return combined text."""
+        file_list = files if files is not None else self.config.context_files
+        if not file_list:
             return ""
 
-        base = Path(self.config.target_project)
+        base = Path(base_dir) if base_dir else Path(self.config.target_project)
         sections: list[str] = []
         total_size = 0
 
-        for relpath in self.config.context_files:
+        for relpath in file_list:
             filepath = base / relpath
             try:
                 content = filepath.read_text(encoding="utf-8")
@@ -625,7 +897,7 @@ class AgentWorker:
                 self._current_task_id,
             )
 
-        file_names = ", ".join(self.config.context_files)
+        file_names = ", ".join(file_list)
         self._add_log(
             LogLevel.SYSTEM,
             f"Injected project context: {file_names} ({total_size} bytes)",
@@ -634,7 +906,7 @@ class AgentWorker:
 
         return f"[Project Context]\n{combined}\n[/Project Context]"
 
-    async def _run_claude(self, prompt: str, task_id: int) -> tuple[int, str, float | None]:
+    async def _run_claude(self, prompt: str, task_id: int, *, cwd: str | None = None) -> tuple[int, str, float | None]:
         # Pass prompt via stdin (not CLI arg) to avoid OS arg length limits and hanging
         cmd = [self.config.claude_command, "-p", "--output-format", "stream-json", "--verbose"]
         if self.config.claude_model:
@@ -643,11 +915,12 @@ class AgentWorker:
             cmd.extend(["--max-budget-usd", str(self.config.claude_max_budget)])
         cmd.append("--dangerously-skip-permissions")
 
+        run_cwd = cwd or self.config.target_project
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
 
         logger.info("Executing: claude -p (stdin, %d chars)", len(prompt))
-        self._add_log(LogLevel.SYSTEM, f"Running claude CLI (cwd: {self.config.target_project}, prompt: {len(prompt)} chars)", task_id)
+        self._add_log(LogLevel.SYSTEM, f"Running claude CLI (cwd: {run_cwd}, prompt: {len(prompt)} chars)", task_id)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -655,7 +928,7 @@ class AgentWorker:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,  # merge stderr → stdout (prevent deadlock)
-                cwd=self.config.target_project,
+                cwd=run_cwd,
                 env=env,
                 limit=4 * 1024 * 1024,  # 4MB line buffer (default 64KB too small for large stream-json)
             )

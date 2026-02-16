@@ -108,7 +108,7 @@ def test_stats_display(html):
 
 
 def test_toast(html):
-    assert 'id="toast"' in html
+    assert 'id="toastContainer"' in html
     assert "showToast" in html
 
 
@@ -151,8 +151,8 @@ def test_label_filter_bar(html):
 
 
 def test_label_badges_in_card(html):
-    assert "labelBadges" in html
-    assert "k-card-labels" in html
+    assert "labelPills" in html
+    assert "label-badge" in html
 
 
 def test_label_in_slide_panel(html):
@@ -354,3 +354,118 @@ def test_time_ago_tooltip(html):
 def test_time_relative_css(html):
     """CSS class for relative time elements"""
     assert "time-relative" in html
+
+
+# ── Card 3-Tier Structure Tests ──
+
+
+def test_card_3tier_title(html):
+    """Tier 1: title with 14px, font-weight 500, line-clamp 2"""
+    assert "k-card-title" in html
+    assert "font-size: 14px" in html
+    assert "-webkit-line-clamp: 2" in html
+
+
+def test_card_3tier_tier2(html):
+    """Tier 2: #ID + label pills"""
+    assert "k-card-tier2" in html
+    assert "k-card-id" in html
+
+
+def test_card_3tier_tier3(html):
+    """Tier 3: priority dot + time + actions"""
+    assert "k-card-tier3" in html
+    assert "priority-dot" in html
+
+
+def test_card_status_border(html):
+    """Card left border colored by status"""
+    assert "card-pending" in html
+    assert "card-in_progress" in html
+    assert "card-waiting_approval" in html
+    assert "card-done" in html
+    assert "card-failed" in html
+
+
+def test_card_priority_dot_css(html):
+    """Priority dot: 4px circle with color per priority"""
+    assert "priority-dot-0" in html
+    assert "priority-dot-1" in html
+    assert "priority-dot-2" in html
+    assert "priority-dot-3" in html
+    assert "width: 4px" in html
+    assert "height: 4px" in html
+
+
+def test_card_renders_status_class(html):
+    """renderCard adds card-${status} class"""
+    assert "card-${t.status}" in html or "card-' + t.status" in html or 'card-${t.status}' in html
+
+
+# ── Toast System Tests ──
+
+
+def test_toast_container(html):
+    """Toast container element exists"""
+    assert "toast-container" in html
+    assert 'id="toastContainer"' in html
+
+
+def test_toast_types_css(html):
+    """Toast types: success (green), error (red), info (blue)"""
+    assert "toast-success" in html
+    assert "toast-error" in html
+    assert "toast-info" in html
+    assert "#22c55e" in html  # success green
+    assert "#ef4444" in html  # error red
+    assert "#3b82f6" in html  # info blue
+
+
+def test_toast_animation_classes(html):
+    """Toast CSS classes: .toast, .toast-visible, .toast-exit"""
+    assert ".toast-visible" in html
+    assert ".toast-exit" in html
+
+
+def test_toast_slide_in(html):
+    """Toast slide-in animation: translateX + 200ms ease-out"""
+    assert "translateX" in html
+    assert "200ms" in html
+    assert "ease-out" in html
+
+
+def test_toast_max_stack(html):
+    """Toast max 3 stacked"""
+    assert "children.length > 3" in html
+
+
+def test_toast_auto_dismiss(html):
+    """Toast auto-dismiss: 4s default, 8s for error"""
+    assert "4000" in html
+    assert "8000" in html
+
+
+def test_toast_show_type_param(html):
+    """showToast accepts message and type parameter"""
+    assert "function showToast(msg, type)" in html
+
+
+def test_toast_on_task_create(html):
+    """Toast shown on task creation"""
+    assert "Task created" in html
+
+
+def test_toast_on_task_delete(html):
+    """Toast shown on task deletion"""
+    assert "Task deleted" in html
+
+
+def test_toast_on_agent_start(html):
+    """Toast shown on agent start"""
+    assert "Agent started" in html
+
+
+def test_toast_on_approve_reject(html):
+    """Toast shown on approve and reject"""
+    assert "Task approved" in html
+    assert "Task rejected" in html

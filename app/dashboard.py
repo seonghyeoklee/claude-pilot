@@ -63,20 +63,43 @@ _EXTRA_CSS = """
 }
 .col-empty { color: #333; font-size: 12px; text-align: center; padding: 24px 0; font-style: italic; }
 
-/* Kanban Card */
+/* Kanban Card — 3-tier design */
 .k-card {
     background: #1a1d27; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
-    cursor: pointer; transition: background 0.15s, box-shadow 0.15s; border: 1px solid transparent;
+    cursor: pointer; transition: background 0.15s, box-shadow 0.15s;
+    border: 1px solid transparent; border-left: 3px solid #374151;
 }
-.k-card:hover { background: #22252f; border-color: #333; }
-.k-card.selected { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
-.k-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.k-card-id { color: #555; font-size: 11px; }
-.k-card-title { font-size: 13px; color: #e0e0e0; line-height: 1.4; word-break: break-word; }
-.k-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
-.k-card-meta { font-size: 10px; color: #555; }
+.k-card:hover { background: #22252f; }
+.k-card.selected { border-color: #3b82f6; border-left-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+.k-card.card-pending { border-left-color: #6b7280; }
+.k-card.card-in_progress { border-left-color: #3b82f6; }
+.k-card.card-waiting_approval { border-left-color: #f59e0b; }
+.k-card.card-done { border-left-color: #22c55e; }
+.k-card.card-failed { border-left-color: #ef4444; }
+
+/* Tier 1: Title */
+.k-card-title {
+    font-size: 14px; font-weight: 500; color: #e5e7eb; line-height: 1.4;
+    word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 6px;
+}
+
+/* Tier 2: ID + label pills */
+.k-card-tier2 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.k-card-id { color: #9ca3af; font-size: 11px; }
+
+/* Tier 3: priority dot + relative time + actions */
+.k-card-tier3 { display: flex; justify-content: space-between; align-items: center; }
+.k-card-tier3-left { display: flex; align-items: center; gap: 6px; }
+.priority-dot { width: 4px; height: 4px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.priority-dot-0 { background: #6b7280; }
+.priority-dot-1 { background: #3b82f6; }
+.priority-dot-2 { background: #f59e0b; }
+.priority-dot-3 { background: #ef4444; }
+.k-card-meta { font-size: 11px; color: #6b7280; }
 .k-card-actions { display: flex; gap: 4px; }
 
+/* Priority badge (kept for slide panel) */
 .priority-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700; }
 .priority-0 { background: #374151; color: #9ca3af; }
 .priority-1 { background: rgba(59,130,246,0.15); color: #60a5fa; }
@@ -300,14 +323,23 @@ _EXTRA_CSS = """
 .status-done { background: rgba(34,197,94,0.15); color: #22c55e; }
 .status-failed { background: rgba(239,68,68,0.15); color: #f87171; }
 
-/* Toast */
-.toast {
-    position: fixed; bottom: 24px; right: 24px; background: #1a1d27; border: 1px solid #374151;
-    border-radius: 10px; padding: 12px 20px; font-size: 13px; color: #e0e0e0;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4); opacity: 0; transition: opacity 0.3s;
-    z-index: 1000; pointer-events: none;
+/* Toast — stacking, 3-tier */
+.toast-container {
+    position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+    display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none;
 }
-.toast.show { opacity: 1; }
+.toast {
+    background: #1a1d27; border: 1px solid #374151; border-radius: 10px;
+    padding: 12px 20px; font-size: 13px; color: #e0e0e0;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4); pointer-events: auto;
+    transform: translateX(120%); transition: transform 200ms ease-out, opacity 200ms ease-out;
+    opacity: 0;
+}
+.toast-visible { transform: translateX(0); opacity: 1; }
+.toast-exit { transform: translateX(120%); opacity: 0; }
+.toast-success { border-left: 3px solid #22c55e; }
+.toast-error { border-left: 3px solid #ef4444; }
+.toast-info { border-left: 3px solid #3b82f6; }
 """
 
 _BODY = """
@@ -395,7 +427,7 @@ _BODY = """
     </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast-container" id="toastContainer"></div>
 """
 
 _JS = r"""
@@ -467,9 +499,7 @@ function renderCard(t) {
     if(t.status === 'failed') actions.push(`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();retryTask(${t.id})" title="Retry">↻</button>`);
     if(t.status === 'pending') actions.push(`<button class="btn btn-gray btn-sm" onclick="event.stopPropagation();cancelTask(${t.id})" title="Cancel">⊘</button>`);
     if(t.status === 'pending') actions.push(`<button class="btn btn-gray btn-sm" onclick="event.stopPropagation();deleteTask(${t.id})" title="Delete">×</button>`);
-    const logCount = (taskLogs[t.id] || []).length;
-    const logBadge = logCount > 0 ? `<span style="font-size:9px;color:#555;margin-left:4px">${logCount} logs</span>` : '';
-    const labelBadges = (t.labels || []).map(l => `<span class="label-badge">${esc(l)}</span>`).join('');
+    const labelPills = (t.labels || []).map(l => `<span class="label-badge">${esc(l)}</span>`).join('');
 
     // Time display: elapsed for running/done, relative for others
     let timeHtml = '';
@@ -481,15 +511,17 @@ function renderCard(t) {
     }
 
     return `
-    <div class="k-card${sel}" onclick="selectTask(${t.id})">
-        <div class="k-card-top">
-            <span class="k-card-id">#${t.id}${logBadge}</span>
-            <span class="priority-badge priority-${t.priority}">${PRIORITY_LABELS[t.priority]}</span>
-        </div>
+    <div class="k-card card-${t.status}${sel}" onclick="selectTask(${t.id})">
         <div class="k-card-title">${esc(t.title)}</div>
-        ${labelBadges ? `<div class="k-card-labels">${labelBadges}</div>` : ''}
-        <div class="k-card-footer">
-            ${timeHtml}
+        <div class="k-card-tier2">
+            <span class="k-card-id">#${t.id}</span>
+            ${labelPills}
+        </div>
+        <div class="k-card-tier3">
+            <div class="k-card-tier3-left">
+                <span class="priority-dot priority-dot-${t.priority}"></span>
+                ${timeHtml}
+            </div>
             <div class="k-card-actions">${actions.join('')}</div>
         </div>
     </div>`;
@@ -625,6 +657,7 @@ async function addTask() {
     document.getElementById('addDesc').value = '';
     document.getElementById('addLabels').value = '';
     document.getElementById('addForm').classList.remove('visible');
+    showToast('Task created', 'success');
     loadTasks();
 }
 
@@ -632,27 +665,31 @@ async function deleteTask(id) {
     if(!confirm('Delete this task?')) return;
     await fetch(`/api/tasks/${id}`, {method:'DELETE'});
     if(selectedTaskId === id) closePanel();
+    showToast('Task deleted', 'info');
     loadTasks();
 }
 
 async function retryTask(id) {
     await fetch(`/api/tasks/${id}/retry`, {method:'POST'});
+    showToast('Task moved to Backlog', 'info');
     loadTasks();
-    showToast('Task moved to Backlog');
 }
 
 async function cancelTask(id) {
     await fetch(`/api/tasks/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'cancelled'})});
+    showToast('Task cancelled', 'info');
     loadTasks();
 }
 
 async function reopenTask(id) {
     await fetch(`/api/tasks/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'pending'})});
+    showToast('Task reopened', 'info');
     loadTasks();
 }
 
 async function runTask(id) {
     await fetch(`/api/tasks/${id}/run`, {method:'POST'});
+    showToast('Task started', 'info');
     ensureSSE();
     loadTasks();
 }
@@ -863,11 +900,13 @@ function fmtTime(iso) {
 async function agentStart() {
     const pri = parseInt(document.getElementById('minPriority').value);
     await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({min_priority:pri})});
+    showToast('Agent started', 'success');
     ensureSSE();
 }
 
 async function agentStop() {
     await fetch('/api/agent/stop', {method:'POST'});
+    showToast('Agent stopped', 'info');
 }
 
 async function pollStatus() {
@@ -895,9 +934,9 @@ async function pollStatus() {
         if(s.state !== 'waiting_approval') approvalShownFor = null;
 
         if(prevState && prevState !== s.state) {
-            if(s.state === 'idle' && prevState === 'running') showToast('Task completed');
-            if(s.state === 'waiting_approval') showToast('Awaiting approval');
-            if(s.state === 'stopped' && prevState !== 'stopped') showToast('Agent stopped');
+            if(s.state === 'idle' && prevState === 'running') showToast('Task completed', 'success');
+            if(s.state === 'waiting_approval') showToast('Awaiting approval', 'info');
+            if(s.state === 'stopped' && prevState !== 'stopped') showToast('Agent stopped', 'info');
         }
         prevState = s.state;
 
@@ -907,6 +946,7 @@ async function pollStatus() {
 
 async function approveTask() {
     await fetch('/api/agent/approve', {method:'POST'});
+    showToast('Task approved', 'success');
 }
 
 async function rejectTask() {
@@ -914,6 +954,7 @@ async function rejectTask() {
     const fb = input ? input.value.trim() : '';
     await fetch('/api/agent/reject', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({feedback:fb})});
     if(input) input.value = '';
+    showToast('Task rejected', 'error');
 }
 
 // ── SSE Logs ──
@@ -938,11 +979,25 @@ function ensureSSE() {
     };
 }
 
-function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3000);
+function showToast(msg, type) {
+    type = type || 'info';
+    const container = document.getElementById('toastContainer');
+    const el = document.createElement('div');
+    el.className = 'toast toast-' + type;
+    el.textContent = msg;
+    container.appendChild(el);
+    // Enforce max 3 toasts
+    while(container.children.length > 3) {
+        container.removeChild(container.firstChild);
+    }
+    // Trigger slide-in
+    requestAnimationFrame(() => { el.classList.add('toast-visible'); });
+    const delay = type === 'error' ? 8000 : 4000;
+    setTimeout(() => {
+        el.classList.remove('toast-visible');
+        el.classList.add('toast-exit');
+        setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); }, 200);
+    }, delay);
 }
 
 function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }

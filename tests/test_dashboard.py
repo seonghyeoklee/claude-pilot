@@ -234,3 +234,123 @@ def test_status_filter_localstorage(html):
 
 def test_status_filter_api_call(html):
     assert "params.set('status', activeStatusFilter)" in html
+
+
+# ── Markdown Rendering Tests ──
+
+
+def test_render_markdown_function_exists(html):
+    assert "function renderMarkdown(text)" in html
+
+
+def test_render_markdown_heading(html):
+    """renderMarkdown handles # headings"""
+    assert "<h' + level + '>'" in html or "h' + level + '>'" in html
+
+
+def test_render_markdown_bold(html):
+    """renderMarkdown converts **bold** to <strong>"""
+    assert "<strong>$1</strong>" in html
+
+
+def test_render_markdown_italic(html):
+    """renderMarkdown converts *italic* to <em>"""
+    assert "<em>$1</em>" in html
+
+
+def test_render_markdown_inline_code(html):
+    """renderMarkdown converts `code` to <code>"""
+    assert "h.replace(/`([^`]+?)`/g" in html
+
+
+def test_render_markdown_code_fence(html):
+    """renderMarkdown converts ```code blocks```"""
+    assert "<pre><code>" in html
+
+
+def test_render_markdown_list(html):
+    """renderMarkdown converts - items to <li>"""
+    assert "<li>$1</li>" in html
+    assert "<ul>" in html
+
+
+def test_render_markdown_link(html):
+    """renderMarkdown converts [text](url) to <a>"""
+    assert 'target="_blank"' in html
+    assert "noopener" in html
+
+
+def test_render_markdown_xss_prevention(html):
+    """HTML is escaped before markdown conversion"""
+    assert "esc(text)" in html
+
+
+def test_render_markdown_used_in_description(html):
+    """Description uses renderMarkdown instead of esc"""
+    assert "renderMarkdown(t.description)" in html
+
+
+def test_markdown_css_inline_code(html):
+    """CSS for inline code styling"""
+    assert ".sp-desc code" in html
+    assert "rgba(255,255,255,0.08)" in html
+
+
+def test_markdown_css_code_block(html):
+    """CSS for code block styling"""
+    assert ".sp-desc pre code" in html
+    assert "rgba(255,255,255,0.05)" in html
+
+
+# ── Time Ago Tests ──
+
+
+def test_time_ago_function_exists(html):
+    assert "function timeAgo(isoString)" in html
+
+
+def test_time_ago_just_now(html):
+    """timeAgo returns 'just now' for < 30s"""
+    assert "'just now'" in html
+
+
+def test_time_ago_minutes(html):
+    """timeAgo returns 'm ago' format"""
+    assert "m ago" in html
+
+
+def test_time_ago_hours(html):
+    """timeAgo returns 'h ago' format"""
+    assert "h ago" in html
+
+
+def test_time_ago_yesterday(html):
+    """timeAgo returns 'yesterday'"""
+    assert "'yesterday'" in html
+
+
+def test_time_ago_date_format(html):
+    """timeAgo returns month abbreviation for > 7 days"""
+    assert "['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']" in html
+
+
+def test_time_ago_auto_refresh(html):
+    """30-second interval refreshes relative times"""
+    assert "setInterval(refreshTimeAgo, 30000)" in html
+    assert "function refreshTimeAgo()" in html
+
+
+def test_time_ago_data_attribute(html):
+    """Cards use data-time attribute for refresh"""
+    assert 'data-time="' in html
+
+
+def test_time_ago_tooltip(html):
+    """Hover shows absolute time via title attribute"""
+    assert "fmtAbsolute" in html
+    assert "title=" in html
+
+
+def test_time_relative_css(html):
+    """CSS class for relative time elements"""
+    assert "time-relative" in html

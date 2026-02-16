@@ -222,8 +222,31 @@ _EXTRA_CSS = """
 
 .sp-desc {
     background: #1a1d27; border-radius: 8px; padding: 14px; color: #ccc; font-size: 13px;
-    line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+    line-height: 1.7; word-break: break-word;
 }
+.sp-desc h1, .sp-desc h2, .sp-desc h3, .sp-desc h4, .sp-desc h5, .sp-desc h6 {
+    color: #e0e0e0; margin: 12px 0 6px 0; line-height: 1.4;
+}
+.sp-desc h1 { font-size: 20px; }
+.sp-desc h2 { font-size: 17px; }
+.sp-desc h3 { font-size: 15px; }
+.sp-desc p { margin: 6px 0; }
+.sp-desc ul { margin: 6px 0; padding-left: 20px; }
+.sp-desc li { margin: 2px 0; }
+.sp-desc code {
+    padding: 2px 6px; background: rgba(255,255,255,0.08); border-radius: 3px;
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 12px;
+}
+.sp-desc pre { margin: 8px 0; }
+.sp-desc pre code {
+    display: block; padding: 10px 14px; background: rgba(255,255,255,0.05);
+    border-radius: 6px; overflow-x: auto; white-space: pre; line-height: 1.5;
+}
+.sp-desc a { color: #3b82f6; text-decoration: none; }
+.sp-desc a:hover { text-decoration: underline; }
+.sp-desc strong { color: #e0e0e0; }
+
+.time-relative { cursor: default; }
 
 .sp-output {
     background: #0d0f14; border-radius: 8px; padding: 12px;
@@ -413,7 +436,10 @@ function renderKanban(tasks) {
     const board = document.getElementById('kanbanBoard');
 
     const hasFailed = tasks.some(t => t.status === 'failed');
-    const cols = hasFailed ? [...COLUMNS, {key:'failed', title:'Failed', color:'#ef4444'}] : COLUMNS;
+    const hasCancelled = tasks.some(t => t.status === 'cancelled');
+    let cols = [...COLUMNS];
+    if(hasFailed) cols.push({key:'failed', title:'Failed', color:'#ef4444'});
+    if(hasCancelled) cols.push({key:'cancelled', title:'Cancelled', color:'#6b7280'});
 
     board.style.gridTemplateColumns = `repeat(${cols.length}, 1fr)`;
 
@@ -439,10 +465,20 @@ function renderCard(t) {
     const actions = [];
     if(t.status === 'pending') actions.push(`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();runTask(${t.id})" title="Run now">▶</button>`);
     if(t.status === 'failed') actions.push(`<button class="btn btn-blue btn-sm" onclick="event.stopPropagation();retryTask(${t.id})" title="Retry">↻</button>`);
+    if(t.status === 'pending') actions.push(`<button class="btn btn-gray btn-sm" onclick="event.stopPropagation();cancelTask(${t.id})" title="Cancel">⊘</button>`);
     if(t.status === 'pending') actions.push(`<button class="btn btn-gray btn-sm" onclick="event.stopPropagation();deleteTask(${t.id})" title="Delete">×</button>`);
     const logCount = (taskLogs[t.id] || []).length;
     const logBadge = logCount > 0 ? `<span style="font-size:9px;color:#555;margin-left:4px">${logCount} logs</span>` : '';
     const labelBadges = (t.labels || []).map(l => `<span class="label-badge">${esc(l)}</span>`).join('');
+
+    // Time display: elapsed for running/done, relative for others
+    let timeHtml = '';
+    if(elapsed) {
+        timeHtml = `<span class="k-card-meta">${elapsed}</span>`;
+    } else {
+        const ts = t.updated_at || t.created_at;
+        if(ts) timeHtml = `<span class="k-card-meta time-relative" data-time="${esc(ts)}" title="${fmtAbsolute(ts)}">${timeAgo(ts)}</span>`;
+    }
 
     return `
     <div class="k-card${sel}" onclick="selectTask(${t.id})">
@@ -453,7 +489,7 @@ function renderCard(t) {
         <div class="k-card-title">${esc(t.title)}</div>
         ${labelBadges ? `<div class="k-card-labels">${labelBadges}</div>` : ''}
         <div class="k-card-footer">
-            <span class="k-card-meta">${elapsed}</span>
+            ${timeHtml}
             <div class="k-card-actions">${actions.join('')}</div>
         </div>
     </div>`;
@@ -486,6 +522,7 @@ const STATUS_TABS = [
     {key:'in_progress',      label:'Running'},
     {key:'done',             label:'Done'},
     {key:'failed',           label:'Failed'},
+    {key:'cancelled',        label:'Cancelled'},
 ];
 
 function renderStatusTabs(tasks) {
@@ -604,6 +641,16 @@ async function retryTask(id) {
     showToast('Task moved to Backlog');
 }
 
+async function cancelTask(id) {
+    await fetch(`/api/tasks/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'cancelled'})});
+    loadTasks();
+}
+
+async function reopenTask(id) {
+    await fetch(`/api/tasks/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'pending'})});
+    loadTasks();
+}
+
 async function runTask(id) {
     await fetch(`/api/tasks/${id}/run`, {method:'POST'});
     ensureSSE();
@@ -672,7 +719,7 @@ function renderSlideLeft(t) {
     if(t.description) {
         html += `<div class="sp-section">
             <div class="sp-section-title">Description</div>
-            <div class="sp-desc">${esc(t.description)}</div>
+            <div class="sp-desc">${renderMarkdown(t.description)}</div>
         </div>`;
     }
 
@@ -699,7 +746,7 @@ function renderSlideLeft(t) {
     if(t.branch_name)
         html += `<div class="sp-meta-item"><div class="label">Branch</div><div class="value" style="font-size:11px;font-family:monospace">${esc(t.branch_name)}</div></div>`;
     if(t.pr_url)
-        html += `<div class="sp-meta-item"><div class="label">PR</div><div class="value"><a href="${esc(t.pr_url)}" target="_blank" style="color:#3b82f6;text-decoration:none;font-size:11px">${esc(t.pr_url.split('/').pop())}</a></div></div>`;
+        html += `<div class="sp-meta-item"><div class="label">PR</div><div class="value"><a href="${esc(t.pr_url)}" target="_blank" style="color:#3b82f6;text-decoration:none;font-size:11px">#${esc(t.pr_url.split('/').pop())} ${esc(t.title)}</a></div></div>`;
     if(t.rejection_feedback)
         html += `<div class="sp-meta-item" style="grid-column:1/-1"><div class="label">Rejection Feedback</div><div class="value" style="color:#f87171">${esc(t.rejection_feedback)}</div></div>`;
     html += `</div></div>`;
@@ -739,7 +786,11 @@ function renderSlideLeft(t) {
         actions.push(`<button class="btn btn-blue" onclick="retryTask(${t.id})">Retry</button>`);
     if(t.status === 'done')
         actions.push(`<button class="btn btn-gray" onclick="retryTask(${t.id})">Re-run</button>`);
-    if(['pending','failed'].includes(t.status))
+    if(t.status === 'cancelled')
+        actions.push(`<button class="btn btn-blue" onclick="reopenTask(${t.id})">Reopen</button>`);
+    if(['pending'].includes(t.status))
+        actions.push(`<button class="btn btn-gray" onclick="cancelTask(${t.id})">Cancel</button>`);
+    if(['pending','failed','cancelled'].includes(t.status))
         actions.push(`<button class="btn btn-gray" onclick="deleteTask(${t.id})">Delete</button>`);
     if(actions.length) {
         html += `<div class="sp-section">
@@ -896,6 +947,66 @@ function showToast(msg) {
 
 function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
+function renderMarkdown(text) {
+    if(!text) return '';
+    // Escape HTML first (XSS prevention)
+    let h = esc(text);
+    // Code fence blocks (```...```)
+    h = h.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_, lang, code) {
+        return '<pre><code>' + code.replace(/\n$/, '') + '</code></pre>';
+    });
+    // Headings (# ~ ######)
+    h = h.replace(/^(#{1,6})\s+(.+)$/gm, function(_, hashes, content) {
+        const level = hashes.length;
+        return '<h' + level + '>' + content + '</h' + level + '>';
+    });
+    // Bold **text**
+    h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic *text*
+    h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // Inline code `text`
+    h = h.replace(/`([^`]+?)`/g, '<code>$1</code>');
+    // Links [text](url)
+    h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Unordered list items (- item)
+    h = h.replace(/^- (.+)$/gm, '<li>$1</li>');
+    h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+    // Wrap remaining plain lines in <p> (skip tags)
+    h = h.split('\n').map(function(line) {
+        const trimmed = line.trim();
+        if(!trimmed) return '';
+        if(/^<(h[1-6]|ul|li|pre|p)/.test(trimmed)) return line;
+        return '<p>' + line + '</p>';
+    }).join('\n');
+    return h;
+}
+
+function timeAgo(isoString) {
+    if(!isoString) return '';
+    const now = Date.now();
+    const then = new Date(isoString).getTime();
+    const diffSec = Math.floor((now - then) / 1000);
+    if(diffSec < 30) return 'just now';
+    if(diffSec < 3600) return Math.floor(diffSec / 60) + 'm ago';
+    if(diffSec < 86400) return Math.floor(diffSec / 3600) + 'h ago';
+    if(diffSec < 172800) return 'yesterday';
+    if(diffSec < 604800) return Math.floor(diffSec / 86400) + 'd ago';
+    const d = new Date(isoString);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return months[d.getMonth()] + ' ' + d.getDate();
+}
+
+function fmtAbsolute(isoString) {
+    if(!isoString) return '';
+    return new Date(isoString).toLocaleString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+function refreshTimeAgo() {
+    document.querySelectorAll('[data-time]').forEach(function(el) {
+        el.textContent = timeAgo(el.getAttribute('data-time'));
+    });
+}
+
 // Keyboard: Escape closes panel
 document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closePanel(); });
 
@@ -979,6 +1090,7 @@ document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closePanel(
 loadTasks();
 pollStatus();
 setInterval(pollStatus, 3000);
+setInterval(refreshTimeAgo, 30000);
 ensureSSE();
 """
 

@@ -101,6 +101,7 @@ class Database:
                 WHEN 'pending' THEN 2
                 WHEN 'failed' THEN 3
                 WHEN 'done' THEN 4
+                WHEN 'cancelled' THEN 5
             END,
             priority DESC, created_at ASC"""
         conditions: list[str] = []

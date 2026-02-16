@@ -14,6 +14,7 @@ class TaskStatus(str, Enum):
     WAITING_APPROVAL = "waiting_approval"
     DONE = "done"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class TaskPriority(int, Enum):

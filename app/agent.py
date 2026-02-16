@@ -389,6 +389,8 @@ class AgentWorker:
             review_body = await self._get_review_body_comments(pr_number, task_id)
             comments = inline + review_body
 
+            self._add_log(LogLevel.SYSTEM, f"Poll {elapsed}s: {len(inline)} inline, {len(review_body)} review body", task_id)
+
             if comments:
                 review_comments = comments
                 self._add_log(LogLevel.SYSTEM, f"Found {len(comments)} actionable comment(s) after {elapsed}s", task_id)
@@ -441,7 +443,9 @@ class AgentWorker:
                 await asyncio.sleep(60)
                 if self._stop_requested:
                     return
-                new_comments = await self._get_review_comments(pr_number, task_id)
+                new_inline = await self._get_inline_review_comments(pr_number, task_id)
+                new_body = await self._get_review_body_comments(pr_number, task_id)
+                new_comments = new_inline + new_body
                 # Only continue if there are NEW comments (more than before)
                 if not new_comments or len(new_comments) <= len(review_comments):
                     self._add_log(LogLevel.SYSTEM, "No new review comments, done addressing", task_id)
@@ -464,17 +468,20 @@ class AgentWorker:
         proc = await asyncio.create_subprocess_exec(
             "gh", "api", f"repos/:owner/:repo/pulls/{pr_number}/comments",
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.PIPE,
             cwd=self.config.target_project,
         )
-        stdout, _ = await proc.communicate()
+        stdout, stderr = await proc.communicate()
         output = stdout.decode("utf-8", errors="replace").strip()
         if proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace").strip()
+            self._add_log(LogLevel.ERROR, f"gh api pulls/comments failed (rc={proc.returncode}): {err[:200]}", task_id)
             return []
 
         try:
             data = json.loads(output)
         except json.JSONDecodeError:
+            self._add_log(LogLevel.ERROR, f"gh api pulls/comments JSON parse failed: {output[:200]}", task_id)
             return []
 
         comments: list[str] = []
@@ -496,17 +503,20 @@ class AgentWorker:
         proc = await asyncio.create_subprocess_exec(
             "gh", "pr", "view", pr_number, "--json", "reviews",
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.PIPE,
             cwd=self.config.target_project,
         )
-        stdout, _ = await proc.communicate()
+        stdout, stderr = await proc.communicate()
         output = stdout.decode("utf-8", errors="replace").strip()
         if proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace").strip()
+            self._add_log(LogLevel.ERROR, f"gh pr view reviews failed (rc={proc.returncode}): {err[:200]}", task_id)
             return []
 
         try:
             data = json.loads(output)
         except json.JSONDecodeError:
+            self._add_log(LogLevel.ERROR, f"gh pr view reviews JSON parse failed: {output[:200]}", task_id)
             return []
 
         comments: list[str] = []

@@ -5,6 +5,29 @@ from __future__ import annotations
 from app.report_theme import wrap_html
 
 _EXTRA_CSS = """
+/* Override container max-width for dashboard (wider) */
+.container { max-width: 100%; padding: 20px 32px; }
+
+/* ── Custom Scrollbar (Dark Theme) ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* Firefox */
+* { scrollbar-width: thin; scrollbar-color: #374151 transparent; }
+/* Kanban column scrollbar — slightly thinner */
+.kanban-col::-webkit-scrollbar { width: 4px; }
+.kanban-col::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+.kanban-col::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+/* Log area scrollbar */
+.sp-log-area::-webkit-scrollbar { width: 5px; }
+.sp-log-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
+.sp-log-area::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+/* Command palette scrollbar */
+.cmd-palette-results::-webkit-scrollbar { width: 4px; }
+.cmd-palette-results::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+
 /* Layout */
 .top-bar {
     display: flex; justify-content: space-between; align-items: center;
@@ -18,6 +41,58 @@ _EXTRA_CSS = """
 .status-dot.running { background: var(--accent); animation: pulse-dot 1.5s infinite; }
 .status-dot.waiting_approval { background: #f59e0b; animation: pulse-dot 1s infinite; }
 @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ── Agent Running: Header effects ── */
+.top-bar { position: relative; overflow: hidden; transition: border-color 0.3s; }
+.top-bar.agent-running { border-color: rgba(88,166,255,0.25); }
+.top-bar.agent-running::after {
+    content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--accent) 30%, #a78bfa 50%, var(--accent) 70%, transparent 100%);
+    background-size: 200% 100%;
+    animation: header-stripe 2s linear infinite;
+}
+@keyframes header-stripe {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+.working-text {
+    font-size: 12px; color: var(--text-tertiary); max-width: 400px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; transition: opacity 0.3s;
+}
+.working-text .working-task { color: var(--accent); font-weight: 600; }
+.working-dots::after {
+    content: ''; display: inline-block; width: 16px; text-align: left;
+    animation: typing-dots 1.4s steps(4, end) infinite;
+}
+@keyframes typing-dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+}
+
+/* ── In-Progress Card: Breathing Glow + LIVE ── */
+.k-card.card-in_progress {
+    border-left-color: #3b82f6;
+    animation: card-breathe 2.5s ease-in-out infinite;
+}
+@keyframes card-breathe {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); border-left-color: #3b82f6; }
+    50% { box-shadow: -2px 0 16px 2px rgba(59,130,246,0.15), 0 0 8px 0 rgba(59,130,246,0.08); border-left-color: #60a5fa; }
+}
+.live-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 9px; font-weight: 800; color: #ef4444; letter-spacing: 0.8px; text-transform: uppercase;
+    background: rgba(239,68,68,0.1); padding: 1px 6px; border-radius: 3px;
+}
+.live-dot {
+    width: 5px; height: 5px; border-radius: 50%; background: #ef4444;
+    animation: live-blink 1.2s ease-in-out infinite;
+}
+@keyframes live-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+}
 
 .btn { border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s, opacity 0.2s; }
 .btn-green { background: #22c55e; color: #fff; }
@@ -96,6 +171,10 @@ _EXTRA_CSS = """
     .cmd-palette { transition: none; }
     .cmd-palette-overlay { transition: none; }
     .status-dot.running, .status-dot.waiting_approval { animation: none; }
+    .top-bar.agent-running::after { animation: none; }
+    .k-card.card-in_progress { animation: none; }
+    .live-dot { animation: none; }
+    .working-dots::after { animation: none; content: '...'; }
 }
 
 /* ── Kanban Board ── */
@@ -108,7 +187,7 @@ _EXTRA_CSS = """
 
 .kanban-col {
     background: var(--bg-card); border-radius: 12px; padding: 14px; display: flex; flex-direction: column;
-    min-height: 180px; max-height: calc(100vh - 340px); overflow-y: auto;
+    min-height: 200px; max-height: calc(100vh - 260px); overflow-y: auto;
     border: 1px solid var(--border);
 }
 .kanban-col.col-pending { border-top: 3px solid #3b82f6; }
@@ -162,7 +241,6 @@ _EXTRA_CSS = """
 }
 .k-card.selected { border-color: var(--accent); border-left-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .k-card.card-pending { border-left-color: #6b7280; }
-.k-card.card-in_progress { border-left-color: #3b82f6; }
 .k-card.card-waiting_approval { border-left-color: #f59e0b; }
 .k-card.card-done { border-left-color: #22c55e; }
 .k-card.card-failed { border-left-color: #ef4444; }
@@ -538,6 +616,7 @@ _BODY = """
             <h1>Claude Pilot</h1>
             <span id="statusDot" class="status-dot stopped"></span>
             <span id="statusLabel" style="color:#888;font-size:13px;">Stopped</span>
+            <span id="workingText" class="working-text" style="display:none;"></span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
             <div class="stats-bar">
@@ -789,6 +868,7 @@ function renderCard(t, stagger, changed) {
             <div class="k-card-title">${esc(t.title)}</div>
             <div class="k-card-tier2">
                 <span class="k-card-id">#${t.id}</span>
+                ${t.status === 'in_progress' ? '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' : ''}
                 ${labelPills}
             </div>
             <div class="k-card-tier3">
@@ -1191,6 +1271,18 @@ async function pollStatus() {
         document.getElementById('statFailed').textContent = s.tasks_failed;
         document.getElementById('btnStart').disabled = s.loop_running;
         document.getElementById('btnStop').disabled = !s.loop_running;
+
+        // Header running effects
+        const topBar = document.querySelector('.top-bar');
+        const workingText = document.getElementById('workingText');
+        const isActive = s.state === 'running' || s.state === 'waiting_approval';
+        topBar.classList.toggle('agent-running', isActive);
+        if(isActive && s.current_task_id && s.current_task_title) {
+            workingText.innerHTML = `<span class="working-task">#${s.current_task_id}</span> ${esc(s.current_task_title)}<span class="working-dots"></span>`;
+            workingText.style.display = '';
+        } else {
+            workingText.style.display = 'none';
+        }
 
         if(s.state !== 'stopped' && !eventSource) ensureSSE();
 

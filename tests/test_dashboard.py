@@ -662,3 +662,161 @@ def test_keyboard_question_help(html):
     """? key toggles help overlay"""
     assert "key === '?'" in html
     assert "openHelp()" in html
+
+
+# ── Drag and Drop Tests ──
+
+
+def test_drag_handle_element(html):
+    """Drag handle with 6-dot grip exists in card"""
+    assert "drag-handle" in html
+    assert "drag-handle-dot" in html
+    assert "drag-handle-dot-row" in html
+
+
+def test_drag_handle_css(html):
+    """Drag handle CSS: cursor grab, opacity transition"""
+    assert "cursor: grab" in html
+    assert ".drag-handle" in html
+
+
+def test_drag_handle_draggable(html):
+    """Drag handle has draggable=true attribute"""
+    assert 'draggable="true"' in html
+
+
+def test_drag_start_function(html):
+    """onDragStart sets dragTaskId and adds dragging class"""
+    assert "function onDragStart(e, taskId)" in html
+    assert "dragTaskId" in html
+    assert "dragging" in html
+
+
+def test_drag_over_function(html):
+    """onDragOver prevents default and adds drag-over class"""
+    assert "function onDragOver(e)" in html
+    assert "drag-over" in html
+
+
+def test_drag_leave_function(html):
+    """onDragLeave removes drag-over class"""
+    assert "function onDragLeave(e)" in html
+
+
+def test_drag_drop_function(html):
+    """onDrop calls PATCH API and updates status"""
+    assert "function onDrop(e)" in html
+    assert "PATCH" in html
+    assert "newStatus" in html
+
+
+def test_drag_optimistic_update(html):
+    """Drop performs optimistic UI update before API call"""
+    assert "task.status = newStatus" in html
+    assert "renderKanban(allTasks)" in html
+
+
+def test_drag_revert_on_failure(html):
+    """Drop reverts to old status on API failure"""
+    assert "task.status = oldStatus" in html
+    assert "Failed to move task" in html
+
+
+def test_drag_insert_line(html):
+    """Insertion line shown at drop position"""
+    assert "drag-insert-line" in html
+    assert "removeDragInsertLines" in html
+
+
+def test_drag_column_data_status(html):
+    """Kanban columns have data-status attribute for drop target"""
+    assert 'data-status="' in html
+
+
+def test_drag_card_data_task_id(html):
+    """Cards have data-task-id attribute"""
+    assert 'data-task-id="' in html
+
+
+def test_drag_card_content_wrapper(html):
+    """Card content wrapped in k-card-content div"""
+    assert "k-card-content" in html
+
+
+def test_drag_over_column_css(html):
+    """Drag-over column: dashed border highlight"""
+    assert ".kanban-col.drag-over" in html
+    assert "dashed" in html
+
+
+def test_drag_dragend_cleanup(html):
+    """dragend event cleans up all drag state"""
+    assert "dragend" in html
+
+
+# ── Slide Panel Animation Tests ──
+
+
+def test_panel_slide_animation(html):
+    """Panel uses 200ms cubic-bezier(0.32,0.72,0,1) transition"""
+    assert "200ms cubic-bezier(0.32,0.72,0,1)" in html
+
+
+def test_panel_overlay_opacity(html):
+    """Overlay uses rgba(0,0,0,0.3) background"""
+    assert "rgba(0,0,0,0.3)" in html
+
+
+def test_panel_sticky_header(html):
+    """Panel header is sticky"""
+    assert "position: sticky" in html
+    assert "top: 0" in html
+
+
+def test_panel_sticky_footer(html):
+    """Panel has sticky footer action bar"""
+    assert "sp-footer" in html
+    assert 'id="spFooter"' in html
+    assert "bottom: 0" in html
+
+
+def test_panel_footer_actions(html):
+    """Footer renders action buttons"""
+    assert "footer.innerHTML" in html
+    assert "footer.style.display" in html
+
+
+# ── Collapsible Section Tests ──
+
+
+def test_collapsible_section_function(html):
+    """toggleSection function exists"""
+    assert "function toggleSection(sectionKey)" in html
+
+
+def test_collapsible_section_localstorage(html):
+    """Collapsed state persisted to localStorage"""
+    assert "sp-sections" in html
+    assert "localStorage" in html
+    assert "sectionCollapseState" in html
+
+
+def test_collapsible_section_chevron(html):
+    """Chevron icon rotates on collapse"""
+    assert "sp-section-chevron" in html
+    assert "rotate(-90deg)" in html
+
+
+def test_collapsible_section_html_builder(html):
+    """sectionHtml helper generates collapsible sections"""
+    assert "function sectionHtml(key, title, content)" in html
+
+
+def test_collapsible_description_section(html):
+    """Description section uses collapsible sectionHtml"""
+    assert "sectionHtml('description'" in html
+
+
+def test_collapsible_details_section(html):
+    """Details section uses collapsible sectionHtml"""
+    assert "sectionHtml('details'" in html

@@ -66,16 +66,44 @@ _EXTRA_CSS = """
 /* Kanban Card — 3-tier design */
 .k-card {
     background: #1a1d27; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
-    cursor: pointer; transition: background 0.15s, box-shadow 0.15s;
+    cursor: pointer; transition: background 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
     border: 1px solid transparent; border-left: 3px solid #374151;
+    display: flex; align-items: flex-start; gap: 8px;
 }
 .k-card:hover { background: #22252f; }
+.k-card.dragging { opacity: 0.5; transform: scale(0.98); }
+
+/* Drag handle — 6-dot grip */
+.drag-handle {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; cursor: grab; padding: 4px 2px; flex-shrink: 0; opacity: 0.3;
+    transition: opacity 0.15s; user-select: none; -webkit-user-select: none;
+}
+.drag-handle:active { cursor: grabbing; }
+.k-card:hover .drag-handle { opacity: 0.7; }
+.drag-handle-dot-row { display: flex; gap: 3px; }
+.drag-handle-dot {
+    width: 4px; height: 4px; border-radius: 50%; background: #6b7280;
+}
+
+/* Drag-over column highlight */
+.kanban-col.drag-over {
+    border: 2px dashed #3b82f6; background: rgba(59,130,246,0.05);
+}
+/* Drop insertion line */
+.drag-insert-line {
+    height: 2px; background: #3b82f6; border-radius: 1px; margin: -1px 0;
+    pointer-events: none; transition: opacity 0.1s;
+}
 .k-card.selected { border-color: #3b82f6; border-left-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
 .k-card.card-pending { border-left-color: #6b7280; }
 .k-card.card-in_progress { border-left-color: #3b82f6; }
 .k-card.card-waiting_approval { border-left-color: #f59e0b; }
 .k-card.card-done { border-left-color: #22c55e; }
 .k-card.card-failed { border-left-color: #ef4444; }
+
+/* Card content wrapper (beside drag handle) */
+.k-card-content { flex: 1; min-width: 0; }
 
 /* Tier 1: Title */
 .k-card-title {
@@ -163,15 +191,15 @@ _EXTRA_CSS = """
 
 /* ── Slide Panel (와이드) ── */
 .slide-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 900;
-    opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 900;
+    opacity: 0; pointer-events: none; transition: opacity 200ms cubic-bezier(0.32,0.72,0,1);
 }
 .slide-overlay.open { opacity: 1; pointer-events: auto; }
 
 .slide-panel {
     position: fixed; top: 0; right: 0; width: 700px; height: 100vh; z-index: 910;
     background: #13151c; border-left: 1px solid #252830;
-    transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.16,1,0.3,1);
+    transform: translateX(100%); transition: transform 200ms cubic-bezier(0.32,0.72,0,1);
     display: flex; flex-direction: column; overflow: hidden;
 }
 .slide-panel.open { transform: translateX(0); }
@@ -196,6 +224,14 @@ _EXTRA_CSS = """
 .sp-header {
     display: flex; justify-content: space-between; align-items: flex-start;
     padding: 20px 28px 16px; border-bottom: 1px solid #252830; flex-shrink: 0;
+    position: sticky; top: 0; background: #13151c; z-index: 5;
+}
+
+/* Sticky action bar at bottom */
+.sp-footer {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 12px 28px; border-top: 1px solid #252830; flex-shrink: 0;
+    background: #13151c; position: sticky; bottom: 0; z-index: 5;
 }
 .sp-title-area { flex: 1; }
 .sp-title-area h2 { font-size: 18px; color: #fff; margin: 0 0 6px 0; line-height: 1.4; word-break: break-word; }
@@ -237,6 +273,20 @@ _EXTRA_CSS = """
     font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase;
     letter-spacing: 0.5px; margin-bottom: 8px;
 }
+
+/* Collapsible section */
+.sp-section-header {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    margin-bottom: 8px; user-select: none; -webkit-user-select: none;
+}
+.sp-section-header:hover .sp-section-title { color: #888; }
+.sp-section-chevron {
+    font-size: 10px; color: #555; transition: transform 0.15s;
+    display: inline-block; width: 14px; text-align: center;
+}
+.sp-section-header.collapsed .sp-section-chevron { transform: rotate(-90deg); }
+.sp-section-body { overflow: hidden; transition: max-height 0.2s ease; }
+.sp-section-body.collapsed { max-height: 0 !important; overflow: hidden; }
 
 .sp-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sp-meta-item { background: #1a1d27; border-radius: 8px; padding: 10px 12px; }
@@ -499,6 +549,7 @@ _BODY = """
             </div>
         </div>
     </div>
+    <div class="sp-footer" id="spFooter"></div>
 </div>
 
 <!-- Command Palette (Cmd+K) -->
@@ -580,7 +631,8 @@ function renderKanban(tasks) {
             ? `<div class="col-empty">No tasks</div>`
             : colTasks.map(t => renderCard(t)).join('');
         return `
-        <div class="kanban-col col-${col.key}">
+        <div class="kanban-col col-${col.key}" data-status="${col.key}"
+             ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
             <div class="col-header">
                 <span class="col-title">${col.title}</span>
                 <span class="col-count">${colTasks.length}</span>
@@ -610,18 +662,25 @@ function renderCard(t) {
     }
 
     return `
-    <div class="k-card card-${t.status}${sel}" onclick="selectTask(${t.id})">
-        <div class="k-card-title">${esc(t.title)}</div>
-        <div class="k-card-tier2">
-            <span class="k-card-id">#${t.id}</span>
-            ${labelPills}
+    <div class="k-card card-${t.status}${sel}" data-task-id="${t.id}" onclick="selectTask(${t.id})">
+        <div class="drag-handle" draggable="true" ondragstart="onDragStart(event,${t.id})" title="Drag to change status">
+            <div class="drag-handle-dot-row"><span class="drag-handle-dot"></span><span class="drag-handle-dot"></span></div>
+            <div class="drag-handle-dot-row"><span class="drag-handle-dot"></span><span class="drag-handle-dot"></span></div>
+            <div class="drag-handle-dot-row"><span class="drag-handle-dot"></span><span class="drag-handle-dot"></span></div>
         </div>
-        <div class="k-card-tier3">
-            <div class="k-card-tier3-left">
-                <span class="priority-dot priority-dot-${t.priority}"></span>
-                ${timeHtml}
+        <div class="k-card-content">
+            <div class="k-card-title">${esc(t.title)}</div>
+            <div class="k-card-tier2">
+                <span class="k-card-id">#${t.id}</span>
+                ${labelPills}
             </div>
-            <div class="k-card-actions">${actions.join('')}</div>
+            <div class="k-card-tier3">
+                <div class="k-card-tier3-left">
+                    <span class="priority-dot priority-dot-${t.priority}"></span>
+                    ${timeHtml}
+                </div>
+                <div class="k-card-actions">${actions.join('')}</div>
+            </div>
         </div>
     </div>`;
 }
@@ -851,12 +910,10 @@ function renderSlideLeft(t) {
     const left = document.getElementById('spLeft');
     let html = '';
 
-    // ── Description / Goal ──
+    // ── Description / Goal (collapsible) ──
     if(t.description) {
-        html += `<div class="sp-section">
-            <div class="sp-section-title">Description</div>
-            <div class="sp-desc">${renderMarkdown(t.description)}</div>
-        </div>`;
+        html += sectionHtml('description', 'Description',
+            `<div class="sp-desc">${renderMarkdown(t.description)}</div>`);
     }
 
     // ── Labels ──
@@ -867,25 +924,24 @@ function renderSlideLeft(t) {
         </div>`;
     }
 
-    // ── Meta grid ──
-    html += `<div class="sp-section">
-        <div class="sp-section-title">Details</div>
-        <div class="sp-meta-grid">`;
+    // ── Meta grid (collapsible) ──
+    let detailsContent = '<div class="sp-meta-grid">';
     if(t.started_at)
-        html += `<div class="sp-meta-item"><div class="label">Started</div><div class="value">${fmtTime(t.started_at)}</div></div>`;
+        detailsContent += `<div class="sp-meta-item"><div class="label">Started</div><div class="value">${fmtTime(t.started_at)}</div></div>`;
     if(t.completed_at)
-        html += `<div class="sp-meta-item"><div class="label">Completed</div><div class="value">${fmtTime(t.completed_at)}</div></div>`;
+        detailsContent += `<div class="sp-meta-item"><div class="label">Completed</div><div class="value">${fmtTime(t.completed_at)}</div></div>`;
     if(t.exit_code !== null && t.exit_code !== undefined)
-        html += `<div class="sp-meta-item"><div class="label">Exit Code</div><div class="value">${t.exit_code}</div></div>`;
+        detailsContent += `<div class="sp-meta-item"><div class="label">Exit Code</div><div class="value">${t.exit_code}</div></div>`;
     if(t.cost_usd)
-        html += `<div class="sp-meta-item"><div class="label">Cost</div><div class="value">$${t.cost_usd.toFixed(4)}</div></div>`;
+        detailsContent += `<div class="sp-meta-item"><div class="label">Cost</div><div class="value">$${t.cost_usd.toFixed(4)}</div></div>`;
     if(t.branch_name)
-        html += `<div class="sp-meta-item"><div class="label">Branch</div><div class="value" style="font-size:11px;font-family:monospace">${esc(t.branch_name)}</div></div>`;
+        detailsContent += `<div class="sp-meta-item"><div class="label">Branch</div><div class="value" style="font-size:11px;font-family:monospace">${esc(t.branch_name)}</div></div>`;
     if(t.pr_url)
-        html += `<div class="sp-meta-item"><div class="label">PR</div><div class="value"><a href="${esc(t.pr_url)}" target="_blank" style="color:#3b82f6;text-decoration:none;font-size:11px">#${esc(t.pr_url.split('/').pop())} ${esc(t.title)}</a></div></div>`;
+        detailsContent += `<div class="sp-meta-item"><div class="label">PR</div><div class="value"><a href="${esc(t.pr_url)}" target="_blank" style="color:#3b82f6;text-decoration:none;font-size:11px">#${esc(t.pr_url.split('/').pop())} ${esc(t.title)}</a></div></div>`;
     if(t.rejection_feedback)
-        html += `<div class="sp-meta-item" style="grid-column:1/-1"><div class="label">Rejection Feedback</div><div class="value" style="color:#f87171">${esc(t.rejection_feedback)}</div></div>`;
-    html += `</div></div>`;
+        detailsContent += `<div class="sp-meta-item" style="grid-column:1/-1"><div class="label">Rejection Feedback</div><div class="value" style="color:#f87171">${esc(t.rejection_feedback)}</div></div>`;
+    detailsContent += '</div>';
+    html += sectionHtml('details', 'Details', detailsContent);
 
     // ── Approval Gate ──
     if(t.status === 'waiting_approval') {
@@ -901,21 +957,24 @@ function renderSlideLeft(t) {
         </div>`;
     }
 
-    // ── Output / Error ──
+    // ── Output / Error (collapsible) ──
     if(t.output) {
-        html += `<div class="sp-section">
-            <div class="sp-section-title">Output</div>
-            <div class="sp-output">${esc(t.output)}</div>
-        </div>`;
+        html += sectionHtml('logs', 'Output',
+            `<div class="sp-output">${esc(t.output)}</div>`);
     } else if(t.error) {
-        html += `<div class="sp-section">
-            <div class="sp-section-title">Error</div>
-            <div class="sp-output" style="color:#ef4444">${esc(t.error)}</div>
-        </div>`;
+        html += sectionHtml('logs', 'Error',
+            `<div class="sp-output" style="color:#ef4444">${esc(t.error)}</div>`);
     }
 
-    // ── Actions ──
+    left.innerHTML = html;
+
+    // ── Footer Actions (sticky bottom bar) ──
+    const footer = document.getElementById('spFooter');
     const actions = [];
+    if(t.status === 'waiting_approval') {
+        actions.push(`<button class="btn btn-green" onclick="approveTask()">Approve</button>`);
+        actions.push(`<button class="btn btn-red" onclick="rejectTask()">Reject</button>`);
+    }
     if(t.status === 'pending')
         actions.push(`<button class="btn btn-blue" onclick="runTask(${t.id})">Run Now</button>`);
     if(t.status === 'failed')
@@ -928,14 +987,8 @@ function renderSlideLeft(t) {
         actions.push(`<button class="btn btn-gray" onclick="cancelTask(${t.id})">Cancel</button>`);
     if(['pending','failed','cancelled'].includes(t.status))
         actions.push(`<button class="btn btn-gray" onclick="deleteTask(${t.id})">Delete</button>`);
-    if(actions.length) {
-        html += `<div class="sp-section">
-            <div class="sp-section-title">Actions</div>
-            <div class="sp-actions">${actions.join('')}</div>
-        </div>`;
-    }
-
-    left.innerHTML = html;
+    footer.innerHTML = actions.join('');
+    footer.style.display = actions.length ? 'flex' : 'none';
 }
 
 // ── Task-specific Log ──
@@ -1457,6 +1510,142 @@ document.addEventListener('keydown', (e) => {
         localStorage.setItem('sp-right-w', right.offsetWidth);
     });
 })();
+
+// ── Drag and Drop ──
+
+let dragTaskId = null;
+
+function onDragStart(e, taskId) {
+    dragTaskId = taskId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(taskId));
+    const card = e.target.closest('.k-card');
+    if(card) {
+        requestAnimationFrame(() => card.classList.add('dragging'));
+    }
+    // Prevent card click
+    e.stopPropagation();
+}
+
+function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const col = e.target.closest('.kanban-col');
+    if(!col) return;
+    col.classList.add('drag-over');
+
+    // Show insertion line near cursor
+    removeDragInsertLines();
+    const cards = Array.from(col.querySelectorAll('.k-card'));
+    let inserted = false;
+    for(const card of cards) {
+        const rect = card.getBoundingClientRect();
+        if(e.clientY < rect.top + rect.height / 2) {
+            const line = document.createElement('div');
+            line.className = 'drag-insert-line';
+            card.parentNode.insertBefore(line, card);
+            inserted = true;
+            break;
+        }
+    }
+    if(!inserted && cards.length > 0) {
+        const line = document.createElement('div');
+        line.className = 'drag-insert-line';
+        const lastCard = cards[cards.length - 1];
+        lastCard.parentNode.insertBefore(line, lastCard.nextSibling);
+    }
+}
+
+function onDragLeave(e) {
+    const col = e.target.closest('.kanban-col');
+    if(!col) return;
+    // Only remove if actually leaving the column
+    const related = e.relatedTarget;
+    if(related && col.contains(related)) return;
+    col.classList.remove('drag-over');
+    removeDragInsertLines();
+}
+
+function onDrop(e) {
+    e.preventDefault();
+    const col = e.target.closest('.kanban-col');
+    if(!col || !dragTaskId) return;
+    col.classList.remove('drag-over');
+    removeDragInsertLines();
+    // Remove dragging class from all cards
+    document.querySelectorAll('.k-card.dragging').forEach(c => c.classList.remove('dragging'));
+
+    const newStatus = col.getAttribute('data-status');
+    const task = allTasks.find(t => t.id === dragTaskId);
+    if(!task || task.status === newStatus) { dragTaskId = null; return; }
+
+    const oldStatus = task.status;
+    // Optimistic UI update
+    task.status = newStatus;
+    _lastKanbanKey = null; // force re-render
+    renderKanban(allTasks);
+    if(selectedTaskId === dragTaskId) {
+        _lastSlideKey = null;
+        renderSlideLeft(task);
+    }
+
+    // PATCH API call
+    fetch(`/api/tasks/${dragTaskId}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: newStatus})
+    }).then(res => {
+        if(!res.ok) throw new Error('PATCH failed');
+        showToast(`Moved to ${STATUS_LABELS[newStatus] || newStatus}`, 'success');
+        loadTasks();
+    }).catch(() => {
+        // Revert on failure
+        task.status = oldStatus;
+        _lastKanbanKey = null;
+        renderKanban(allTasks);
+        showToast('Failed to move task', 'error');
+    });
+
+    dragTaskId = null;
+}
+
+function removeDragInsertLines() {
+    document.querySelectorAll('.drag-insert-line').forEach(l => l.remove());
+}
+
+// Clean up dragging state on dragend
+document.addEventListener('dragend', () => {
+    document.querySelectorAll('.k-card.dragging').forEach(c => c.classList.remove('dragging'));
+    document.querySelectorAll('.kanban-col.drag-over').forEach(c => c.classList.remove('drag-over'));
+    removeDragInsertLines();
+    dragTaskId = null;
+});
+
+// ── Collapsible Sections ──
+
+const sectionCollapseState = JSON.parse(localStorage.getItem('sp-sections') || '{}');
+
+function toggleSection(sectionKey) {
+    sectionCollapseState[sectionKey] = !sectionCollapseState[sectionKey];
+    localStorage.setItem('sp-sections', JSON.stringify(sectionCollapseState));
+    const header = document.querySelector(`[data-section="${sectionKey}"]`);
+    const body = document.querySelector(`[data-section-body="${sectionKey}"]`);
+    if(header && body) {
+        header.classList.toggle('collapsed', sectionCollapseState[sectionKey]);
+        body.classList.toggle('collapsed', sectionCollapseState[sectionKey]);
+    }
+}
+
+function sectionHtml(key, title, content) {
+    const collapsed = sectionCollapseState[key] ? ' collapsed' : '';
+    return `<div class="sp-section">
+        <div class="sp-section-header${collapsed}" data-section="${key}" onclick="toggleSection('${key}')">
+            <span class="sp-section-chevron">&#x25BC;</span>
+            <div class="sp-section-title" style="margin-bottom:0">${title}</div>
+        </div>
+        <div class="sp-section-body${collapsed}" data-section-body="${key}">${content}</div>
+    </div>`;
+}
 
 // ── Init ──
 loadTasks();

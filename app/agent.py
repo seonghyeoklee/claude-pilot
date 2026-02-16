@@ -567,7 +567,8 @@ class AgentWorker:
         return f"[Project Context]\n{combined}\n[/Project Context]"
 
     async def _run_claude(self, prompt: str, task_id: int) -> tuple[int, str, float | None]:
-        cmd = [self.config.claude_command, "-p", prompt, "--output-format", "stream-json", "--verbose"]
+        # Pass prompt via stdin (not CLI arg) to avoid OS arg length limits and hanging
+        cmd = [self.config.claude_command, "-p", "--output-format", "stream-json", "--verbose"]
         if self.config.claude_model:
             cmd.extend(["--model", self.config.claude_model])
         if self.config.claude_max_budget:
@@ -577,12 +578,13 @@ class AgentWorker:
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
 
-        logger.info("Executing: %s", " ".join(cmd[:5]) + " ...")
-        self._add_log(LogLevel.SYSTEM, f"Running claude CLI (cwd: {self.config.target_project})", task_id)
+        logger.info("Executing: claude -p (stdin, %d chars)", len(prompt))
+        self._add_log(LogLevel.SYSTEM, f"Running claude CLI (cwd: {self.config.target_project}, prompt: {len(prompt)} chars)", task_id)
 
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,  # merge stderr → stdout (prevent deadlock)
                 cwd=self.config.target_project,
@@ -594,6 +596,11 @@ class AgentWorker:
             return 1, "claude command not found", None
 
         self._proc = proc
+        # Feed prompt via stdin and close
+        proc.stdin.write(prompt.encode("utf-8"))
+        await proc.stdin.drain()
+        proc.stdin.close()
+
         output_parts: list[str] = []
         cost: float | None = None
 
@@ -664,10 +671,10 @@ class AgentWorker:
                     pass
 
         try:
-            await asyncio.wait_for(read_stream(), timeout=600)
+            await asyncio.wait_for(read_stream(), timeout=1800)
         except asyncio.TimeoutError:
             proc.kill()
-            self._add_log(LogLevel.ERROR, "Claude process timed out (10min)", task_id)
+            self._add_log(LogLevel.ERROR, "Claude process timed out (30min)", task_id)
             return 1, "timeout", cost
         except asyncio.LimitOverrunError:
             # Stream line exceeded buffer limit — drain and continue

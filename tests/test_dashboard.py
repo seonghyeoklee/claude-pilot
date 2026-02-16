@@ -625,7 +625,7 @@ def test_keyboard_j_k_navigation(html):
 def test_keyboard_focus_ring_css(html):
     """Focus ring: 2px accent color box-shadow"""
     assert ".k-card.kb-focus" in html
-    assert "0 0 0 2px #3b82f6" in html
+    assert "0 0 0 2px var(--accent)" in html
 
 
 def test_keyboard_enter_opens_card(html):
@@ -820,3 +820,146 @@ def test_collapsible_description_section(html):
 def test_collapsible_details_section(html):
     """Details section uses collapsible sectionHtml"""
     assert "sectionHtml('details'" in html
+
+
+# ── Dark Theme CSS Variables Tests ──
+
+
+def test_theme_var_bg_page(html):
+    """CSS variable --bg-page defined as #0f1117"""
+    assert "--bg-page: #0f1117" in html
+
+
+def test_theme_var_bg_card(html):
+    """CSS variable --bg-card defined as #161b22"""
+    assert "--bg-card: #161b22" in html
+
+
+def test_theme_var_bg_panel(html):
+    """CSS variable --bg-panel defined as #1c2128"""
+    assert "--bg-panel: #1c2128" in html
+
+
+def test_theme_var_text_primary(html):
+    """CSS variable --text-primary defined as #e5e7eb"""
+    assert "--text-primary: #e5e7eb" in html
+
+
+def test_theme_var_text_secondary(html):
+    """CSS variable --text-secondary defined as #9ca3af"""
+    assert "--text-secondary: #9ca3af" in html
+
+
+def test_theme_var_text_tertiary(html):
+    """CSS variable --text-tertiary defined as #6b7280"""
+    assert "--text-tertiary: #6b7280" in html
+
+
+def test_theme_var_accent(html):
+    """CSS variable --accent defined as #58a6ff"""
+    assert "--accent: #58a6ff" in html
+
+
+def test_theme_var_border(html):
+    """CSS variable --border with rgba(255,255,255,0.08)"""
+    assert "--border: rgba(255,255,255,0.08)" in html
+
+
+def test_theme_var_hover(html):
+    """CSS variable --hover-overlay defined"""
+    assert "--hover-overlay: rgba(255,255,255,0.04)" in html
+
+
+def test_theme_vars_used_in_card(html):
+    """Card uses CSS variables for background and border"""
+    assert "background: var(--bg-panel)" in html
+    assert "border: 1px solid var(--border)" in html
+
+
+def test_theme_focus_visible(html):
+    """focus-visible outline uses accent color"""
+    assert "focus-visible" in html
+    assert "outline: 2px solid var(--accent)" in html
+
+
+# ── Skeleton Loading Tests ──
+
+
+def test_skeleton_shimmer_keyframes(html):
+    """@keyframes shimmer defined for skeleton loading"""
+    assert "@keyframes shimmer" in html
+    assert "background-position" in html
+
+
+def test_skeleton_css_classes(html):
+    """Skeleton CSS classes defined"""
+    assert ".skeleton" in html
+    assert ".skeleton-card" in html
+    assert ".skeleton-title" in html
+    assert ".skeleton-label" in html
+    assert ".skeleton-meta" in html
+
+
+def test_skeleton_shimmer_animation(html):
+    """Skeleton uses 1.5s infinite shimmer animation"""
+    assert "animation: shimmer 1.5s infinite" in html
+
+
+def test_skeleton_render_function(html):
+    """renderSkeletonBoard function exists"""
+    assert "function renderSkeletonBoard()" in html
+
+
+def test_skeleton_3_per_column(html):
+    """Each column renders 3 skeleton cards"""
+    assert "length: 3" in html
+
+
+def test_skeleton_called_on_init(html):
+    """renderSkeletonBoard called before loadTasks on init"""
+    assert "renderSkeletonBoard();" in html
+
+
+# ── Micro-Animation Tests ──
+
+
+def test_card_enter_keyframes(html):
+    """@keyframes card-enter defined: opacity + translateY"""
+    assert "@keyframes card-enter" in html
+    assert "translateY(8px)" in html
+
+
+def test_state_pulse_keyframes(html):
+    """@keyframes state-pulse defined: scale 1→1.02→1"""
+    assert "@keyframes state-pulse" in html
+    assert "scale(1.02)" in html
+
+
+def test_log_line_enter_keyframes(html):
+    """@keyframes log-line-enter defined"""
+    assert "@keyframes log-line-enter" in html
+
+
+def test_card_enter_stagger(html):
+    """Cards have staggered animation-delay"""
+    assert "animation-delay" in html
+    assert "stagger" in html
+
+
+def test_state_changed_class(html):
+    """state-changed class triggers pulse animation"""
+    assert "state-changed" in html
+    assert "state-pulse" in html
+
+
+def test_filter_tab_underline(html):
+    """Status tab has animated underline (::after pseudo-element)"""
+    assert ".status-tab::after" in html
+    assert "width: 0" in html
+    assert "width: 80%" in html
+
+
+def test_reduced_motion_support(html):
+    """prefers-reduced-motion media query disables animations"""
+    assert "prefers-reduced-motion: reduce" in html
+    assert "animation: none" in html

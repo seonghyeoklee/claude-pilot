@@ -3,28 +3,43 @@
 CHART_JS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
 
 DARK_THEME_CSS = """
+:root {
+    --bg-page: #0f1117;
+    --bg-card: #161b22;
+    --bg-panel: #1c2128;
+    --text-primary: #e5e7eb;
+    --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
+    --accent: #58a6ff;
+    --border: rgba(255,255,255,0.08);
+    --hover-overlay: rgba(255,255,255,0.04);
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Pretendard', sans-serif; background: #0f1117; color: #e0e0e0; }
+body { font-family: -apple-system, 'Pretendard', sans-serif; background: var(--bg-page); color: var(--text-primary); }
 .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
 header { text-align: center; padding: 40px 0 24px; }
 header h1 { font-size: 28px; font-weight: 700; color: #fff; }
-header p { color: #888; margin-top: 8px; font-size: 14px; }
+header p { color: var(--text-secondary); margin-top: 8px; font-size: 14px; }
 
 .positive { color: #22c55e; }
 .negative { color: #ef4444; }
 
-.section { background: #1a1d27; border-radius: 12px; padding: 24px; margin: 20px 0; }
+.section { background: var(--bg-card); border-radius: 12px; padding: 24px; margin: 20px 0; border: 1px solid var(--border); }
 .section h2 { font-size: 18px; color: #fff; margin-bottom: 16px; }
-.summary-card { background: #1a1d27; border-radius: 12px; padding: 20px; }
-.summary-card h3 { font-size: 14px; color: #aaa; margin-bottom: 8px; }
+.summary-card { background: var(--bg-card); border-radius: 12px; padding: 20px; border: 1px solid var(--border); }
+.summary-card h3 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { background: #252830; color: #aaa; font-weight: 600; padding: 10px 12px; text-align: left; }
-td { padding: 10px 12px; border-bottom: 1px solid #252830; }
+th { background: var(--bg-panel); color: var(--text-secondary); font-weight: 600; padding: 10px 12px; text-align: left; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 
-footer { text-align: center; padding: 32px; color: #555; font-size: 12px; }
+footer { text-align: center; padding: 32px; color: var(--text-tertiary); font-size: 12px; }
+
+/* Focus-visible: keyboard only, not mouse */
+*:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+*:focus:not(:focus-visible) { outline: none; }
 """.strip()
 
 

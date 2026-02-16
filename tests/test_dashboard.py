@@ -469,3 +469,196 @@ def test_toast_on_approve_reject(html):
     """Toast shown on approve and reject"""
     assert "Task approved" in html
     assert "Task rejected" in html
+
+
+# ── Command Palette (Cmd+K) Tests ──
+
+
+def test_cmd_palette_overlay(html):
+    """Command palette overlay element exists"""
+    assert 'id="cmdPaletteOverlay"' in html
+    assert "cmd-palette-overlay" in html
+
+
+def test_cmd_palette_input(html):
+    """Command palette has search input with placeholder"""
+    assert 'id="cmdPaletteInput"' in html
+    assert 'Search tasks, actions...' in html
+
+
+def test_cmd_palette_results(html):
+    """Command palette has results container"""
+    assert 'id="cmdPaletteResults"' in html
+    assert "cmd-palette-results" in html
+
+
+def test_cmd_palette_open_close(html):
+    """openCmdPalette and closeCmdPalette functions exist"""
+    assert "function openCmdPalette()" in html
+    assert "function closeCmdPalette()" in html
+
+
+def test_cmd_palette_render_results(html):
+    """renderCmdResults function for fuzzy matching"""
+    assert "function renderCmdResults(query)" in html
+    assert "toLowerCase" in html
+
+
+def test_cmd_palette_task_group(html):
+    """Palette shows TASKS group from allTasksUnfiltered"""
+    assert "cmd-palette-group-title" in html
+    assert "Tasks" in html
+
+
+def test_cmd_palette_actions_group(html):
+    """Palette shows ACTIONS group with predefined actions"""
+    assert "CMD_ACTIONS" in html
+    assert "Start Agent" in html
+    assert "Stop Agent" in html
+    assert "Add Task" in html
+
+
+def test_cmd_palette_filter_actions(html):
+    """Palette includes status filter actions"""
+    assert "Filter: All" in html
+    assert "Filter: Pending" in html
+    assert "Filter: Done" in html
+    assert "Filter: Failed" in html
+
+
+def test_cmd_palette_arrow_keys(html):
+    """Arrow keys navigate palette items"""
+    assert "ArrowDown" in html
+    assert "ArrowUp" in html
+
+
+def test_cmd_palette_enter_select(html):
+    """Enter selects active palette item"""
+    assert "cmdSelect" in html
+    assert "function cmdSelect(idx)" in html
+
+
+def test_cmd_palette_escape_close(html):
+    """Escape closes palette"""
+    assert "closeCmdPalette()" in html
+
+
+def test_cmd_palette_background_click(html):
+    """Clicking overlay background closes palette"""
+    assert "e.target === e.currentTarget" in html
+
+
+def test_cmd_palette_css(html):
+    """Command palette CSS: max-width 560px, z-index 2000"""
+    assert "max-width: 560px" in html
+    assert "z-index: 2000" in html
+
+
+def test_cmd_palette_item_hover(html):
+    """Palette items have hover/active states"""
+    assert "cmd-palette-item" in html
+    assert "cmdHover" in html
+    assert "updateCmdActive" in html
+
+
+def test_cmd_palette_empty_state(html):
+    """Palette shows empty message when no results"""
+    assert "cmd-palette-empty" in html
+    assert "No results for" in html
+
+
+# ── Help Overlay (?) Tests ──
+
+
+def test_help_overlay(html):
+    """Help overlay element exists"""
+    assert 'id="helpOverlay"' in html
+    assert "help-overlay" in html
+
+
+def test_help_dialog_content(html):
+    """Help dialog shows keyboard shortcuts"""
+    assert "Keyboard Shortcuts" in html
+    assert "help-dialog" in html
+
+
+def test_help_shortcut_list(html):
+    """Help lists all keyboard shortcuts"""
+    assert "Command palette" in html
+    assert "Navigate cards down" in html
+    assert "Navigate cards up" in html
+    assert "Open selected card" in html
+    assert "Close panel / modal" in html
+    assert "Focus search" in html
+    assert "Approve task" in html
+    assert "Reject task" in html
+
+
+def test_help_key_badges(html):
+    """Help shows key badges with help-key class"""
+    assert "help-key" in html
+    assert "help-row" in html
+
+
+def test_help_open_close(html):
+    """openHelp and closeHelp functions exist"""
+    assert "function openHelp()" in html
+    assert "function closeHelp()" in html
+
+
+# ── Keyboard Navigation Tests ──
+
+
+def test_keyboard_cmd_k(html):
+    """Cmd+K / Ctrl+K opens command palette"""
+    assert "e.metaKey || e.ctrlKey" in html
+    assert "openCmdPalette()" in html
+
+
+def test_keyboard_j_k_navigation(html):
+    """J/K keys navigate cards"""
+    assert "kbFocusIdx" in html
+    assert "function setKbFocus(idx)" in html
+    assert "kb-focus" in html
+
+
+def test_keyboard_focus_ring_css(html):
+    """Focus ring: 2px accent color box-shadow"""
+    assert ".k-card.kb-focus" in html
+    assert "0 0 0 2px #3b82f6" in html
+
+
+def test_keyboard_enter_opens_card(html):
+    """Enter key opens selected card detail"""
+    assert "kbFocusIdx >= 0" in html
+    assert "cards[kbFocusIdx]" in html
+
+
+def test_keyboard_slash_focuses_search(html):
+    """/ key focuses search input"""
+    assert "key === '/'" in html
+    assert "searchInput" in html
+
+
+def test_keyboard_a_approve(html):
+    """A key triggers approve on waiting_approval"""
+    assert "key === 'a'" in html
+    assert "approvalPanel" in html
+
+
+def test_keyboard_r_reject(html):
+    """R key triggers reject on waiting_approval"""
+    assert "key === 'r'" in html
+    assert "approvalPanel" in html
+
+
+def test_keyboard_input_disabled(html):
+    """Shortcuts disabled when input/textarea focused"""
+    assert "function isInputFocused()" in html
+    assert "isContentEditable" in html
+
+
+def test_keyboard_question_help(html):
+    """? key toggles help overlay"""
+    assert "key === '?'" in html
+    assert "openHelp()" in html

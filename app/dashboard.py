@@ -323,6 +323,80 @@ _EXTRA_CSS = """
 .status-done { background: rgba(34,197,94,0.15); color: #22c55e; }
 .status-failed { background: rgba(239,68,68,0.15); color: #f87171; }
 
+/* ── Command Palette (Cmd+K) ── */
+.cmd-palette-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000;
+    opacity: 0; pointer-events: none; transition: opacity 0.15s;
+    display: flex; justify-content: center; padding-top: 20vh;
+}
+.cmd-palette-overlay.open { opacity: 1; pointer-events: auto; }
+
+.cmd-palette {
+    width: 100%; max-width: 560px; background: #1a1d27; border: 1px solid #374151;
+    border-radius: 12px; box-shadow: 0 16px 64px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column; max-height: 420px;
+    transform: scale(0.96); transition: transform 0.15s;
+}
+.cmd-palette-overlay.open .cmd-palette { transform: scale(1); }
+
+.cmd-palette-input {
+    width: 100%; background: transparent; border: none; border-bottom: 1px solid #252830;
+    padding: 16px 20px; color: #e0e0e0; font-size: 15px; font-family: inherit; outline: none;
+}
+.cmd-palette-input::placeholder { color: #555; }
+
+.cmd-palette-results {
+    flex: 1; overflow-y: auto; padding: 8px;
+}
+.cmd-palette-group { padding: 4px 0; }
+.cmd-palette-group-title {
+    font-size: 10px; font-weight: 700; color: #555; text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 6px 12px;
+}
+.cmd-palette-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-radius: 8px; cursor: pointer; transition: background 0.1s; color: #ccc; font-size: 13px;
+}
+.cmd-palette-item:hover, .cmd-palette-item.active { background: #252830; color: #fff; }
+.cmd-palette-item .cmd-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+.cmd-palette-item .cmd-label { flex: 1; }
+.cmd-palette-item .cmd-hint { font-size: 11px; color: #555; }
+.cmd-palette-empty { color: #555; font-size: 13px; text-align: center; padding: 24px; font-style: italic; }
+
+/* ── Help Overlay (?) ── */
+.help-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000;
+    opacity: 0; pointer-events: none; transition: opacity 0.15s;
+    display: flex; justify-content: center; align-items: center;
+}
+.help-overlay.open { opacity: 1; pointer-events: auto; }
+.help-dialog {
+    background: #1a1d27; border: 1px solid #374151; border-radius: 12px;
+    padding: 24px 32px; max-width: 480px; width: 100%;
+    box-shadow: 0 16px 64px rgba(0,0,0,0.5);
+}
+.help-dialog h2 { font-size: 16px; color: #fff; margin-bottom: 16px; }
+.help-dialog .help-close {
+    float: right; background: none; border: none; color: #666; font-size: 20px; cursor: pointer;
+}
+.help-dialog .help-close:hover { color: #fff; }
+.help-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid #1e2030;
+}
+.help-row:last-child { border-bottom: none; }
+.help-key {
+    background: #252830; border: 1px solid #374151; border-radius: 4px;
+    padding: 2px 8px; font-size: 12px; font-family: 'SF Mono','Fira Code',monospace;
+    color: #e0e0e0; min-width: 24px; text-align: center;
+}
+.help-desc { font-size: 13px; color: #aaa; }
+
+/* ── Keyboard Focus Ring ── */
+.k-card.kb-focus {
+    box-shadow: 0 0 0 2px #3b82f6; border-color: #3b82f6;
+}
+
 /* Toast — stacking, 3-tier */
 .toast-container {
     position: fixed; bottom: 24px; right: 24px; z-index: 1000;
@@ -424,6 +498,31 @@ _BODY = """
                 </div>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Command Palette (Cmd+K) -->
+<div class="cmd-palette-overlay" id="cmdPaletteOverlay">
+    <div class="cmd-palette">
+        <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Search tasks, actions..." autocomplete="off">
+        <div class="cmd-palette-results" id="cmdPaletteResults"></div>
+    </div>
+</div>
+
+<!-- Help Overlay (?) -->
+<div class="help-overlay" id="helpOverlay">
+    <div class="help-dialog">
+        <button class="help-close" onclick="closeHelp()">&times;</button>
+        <h2>Keyboard Shortcuts</h2>
+        <div class="help-row"><span class="help-desc">Command palette</span><span class="help-key">&#8984;K</span></div>
+        <div class="help-row"><span class="help-desc">Show this help</span><span class="help-key">?</span></div>
+        <div class="help-row"><span class="help-desc">Navigate cards down</span><span class="help-key">J</span></div>
+        <div class="help-row"><span class="help-desc">Navigate cards up</span><span class="help-key">K</span></div>
+        <div class="help-row"><span class="help-desc">Open selected card</span><span class="help-key">Enter</span></div>
+        <div class="help-row"><span class="help-desc">Close panel / modal</span><span class="help-key">Esc</span></div>
+        <div class="help-row"><span class="help-desc">Focus search</span><span class="help-key">/</span></div>
+        <div class="help-row"><span class="help-desc">Approve task</span><span class="help-key">A</span></div>
+        <div class="help-row"><span class="help-desc">Reject task</span><span class="help-key">R</span></div>
     </div>
 </div>
 
@@ -1062,8 +1161,226 @@ function refreshTimeAgo() {
     });
 }
 
-// Keyboard: Escape closes panel
-document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closePanel(); });
+// ── Command Palette (Cmd+K) ──
+
+let cmdPaletteOpen = false;
+let cmdActiveIdx = 0;
+let cmdItems = [];
+
+const CMD_ACTIONS = [
+    {id:'start',   icon:'\u25B6', label:'Start Agent',          fn:agentStart,   hint:''},
+    {id:'stop',    icon:'\u25A0', label:'Stop Agent',           fn:agentStop,    hint:''},
+    {id:'add',     icon:'+',      label:'Add Task',             fn:toggleAddForm, hint:''},
+    {id:'f-all',   icon:'\u2630', label:'Filter: All',          fn:()=>setStatusFilter('all'),       hint:'Status'},
+    {id:'f-pend',  icon:'\u2630', label:'Filter: Pending',      fn:()=>setStatusFilter('pending'),   hint:'Status'},
+    {id:'f-run',   icon:'\u2630', label:'Filter: Running',      fn:()=>setStatusFilter('in_progress'),hint:'Status'},
+    {id:'f-done',  icon:'\u2630', label:'Filter: Done',         fn:()=>setStatusFilter('done'),      hint:'Status'},
+    {id:'f-fail',  icon:'\u2630', label:'Filter: Failed',       fn:()=>setStatusFilter('failed'),    hint:'Status'},
+];
+
+function openCmdPalette() {
+    cmdPaletteOpen = true;
+    const overlay = document.getElementById('cmdPaletteOverlay');
+    overlay.classList.add('open');
+    const input = document.getElementById('cmdPaletteInput');
+    input.value = '';
+    input.focus();
+    cmdActiveIdx = 0;
+    renderCmdResults('');
+}
+
+function closeCmdPalette() {
+    cmdPaletteOpen = false;
+    document.getElementById('cmdPaletteOverlay').classList.remove('open');
+}
+
+function renderCmdResults(query) {
+    const container = document.getElementById('cmdPaletteResults');
+    const q = query.toLowerCase().trim();
+    cmdItems = [];
+    let html = '';
+
+    // Tasks group
+    const matchedTasks = allTasksUnfiltered.filter(t =>
+        t.title.toLowerCase().includes(q) || ('#' + t.id).includes(q)
+    );
+    if(matchedTasks.length > 0) {
+        html += `<div class="cmd-palette-group"><div class="cmd-palette-group-title">Tasks</div>`;
+        matchedTasks.slice(0, 8).forEach(t => {
+            const idx = cmdItems.length;
+            cmdItems.push({type:'task', task:t});
+            html += `<div class="cmd-palette-item${idx===cmdActiveIdx?' active':''}" data-idx="${idx}" onmouseenter="cmdHover(${idx})" onclick="cmdSelect(${idx})">
+                <span class="cmd-icon">#</span><span class="cmd-label">${esc(t.title)}</span><span class="cmd-hint">${STATUS_LABELS[t.status]||t.status}</span>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Actions group
+    const matchedActions = CMD_ACTIONS.filter(a => a.label.toLowerCase().includes(q));
+    if(matchedActions.length > 0) {
+        html += `<div class="cmd-palette-group"><div class="cmd-palette-group-title">Actions</div>`;
+        matchedActions.forEach(a => {
+            const idx = cmdItems.length;
+            cmdItems.push({type:'action', action:a});
+            html += `<div class="cmd-palette-item${idx===cmdActiveIdx?' active':''}" data-idx="${idx}" onmouseenter="cmdHover(${idx})" onclick="cmdSelect(${idx})">
+                <span class="cmd-icon">${a.icon}</span><span class="cmd-label">${a.label}</span><span class="cmd-hint">${a.hint}</span>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    if(cmdItems.length === 0) {
+        html = `<div class="cmd-palette-empty">No results for "${esc(query)}"</div>`;
+    }
+    container.innerHTML = html;
+}
+
+function cmdHover(idx) {
+    cmdActiveIdx = idx;
+    updateCmdActive();
+}
+
+function updateCmdActive() {
+    const items = document.querySelectorAll('.cmd-palette-item');
+    items.forEach((el, i) => {
+        el.classList.toggle('active', i === cmdActiveIdx);
+    });
+    // Scroll active into view
+    const active = items[cmdActiveIdx];
+    if(active) active.scrollIntoView({block:'nearest'});
+}
+
+function cmdSelect(idx) {
+    const item = cmdItems[idx];
+    if(!item) return;
+    closeCmdPalette();
+    if(item.type === 'task') {
+        selectTask(item.task.id);
+    } else if(item.type === 'action') {
+        item.action.fn();
+    }
+}
+
+document.getElementById('cmdPaletteInput').addEventListener('input', (e) => {
+    cmdActiveIdx = 0;
+    renderCmdResults(e.target.value);
+});
+
+document.getElementById('cmdPaletteInput').addEventListener('keydown', (e) => {
+    if(e.key === 'ArrowDown') { e.preventDefault(); cmdActiveIdx = Math.min(cmdActiveIdx + 1, cmdItems.length - 1); updateCmdActive(); }
+    else if(e.key === 'ArrowUp') { e.preventDefault(); cmdActiveIdx = Math.max(cmdActiveIdx - 1, 0); updateCmdActive(); }
+    else if(e.key === 'Enter') { e.preventDefault(); cmdSelect(cmdActiveIdx); }
+    else if(e.key === 'Escape') { closeCmdPalette(); }
+});
+
+document.getElementById('cmdPaletteOverlay').addEventListener('click', (e) => {
+    if(e.target === e.currentTarget) closeCmdPalette();
+});
+
+// ── Help Overlay (?) ──
+
+let helpOpen = false;
+
+function openHelp() {
+    helpOpen = true;
+    document.getElementById('helpOverlay').classList.add('open');
+}
+
+function closeHelp() {
+    helpOpen = false;
+    document.getElementById('helpOverlay').classList.remove('open');
+}
+
+document.getElementById('helpOverlay').addEventListener('click', (e) => {
+    if(e.target === e.currentTarget) closeHelp();
+});
+
+// ── Keyboard Navigation (J/K/Enter/Escape/?/A/R) ──
+
+let kbFocusIdx = -1;
+
+function getAllCards() {
+    return Array.from(document.querySelectorAll('.k-card'));
+}
+
+function setKbFocus(idx) {
+    const cards = getAllCards();
+    // Remove old focus
+    cards.forEach(c => c.classList.remove('kb-focus'));
+    if(idx < 0 || idx >= cards.length) { kbFocusIdx = -1; return; }
+    kbFocusIdx = idx;
+    cards[idx].classList.add('kb-focus');
+    cards[idx].scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+
+function isInputFocused() {
+    const el = document.activeElement;
+    if(!el) return false;
+    const tag = el.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+}
+
+document.addEventListener('keydown', (e) => {
+    // Cmd+K / Ctrl+K: Command palette
+    if((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        if(cmdPaletteOpen) closeCmdPalette(); else openCmdPalette();
+        return;
+    }
+
+    // If palette is open, let palette handle keys
+    if(cmdPaletteOpen) return;
+
+    // Escape: close help, then panel
+    if(e.key === 'Escape') {
+        if(helpOpen) { closeHelp(); return; }
+        closePanel();
+        return;
+    }
+
+    // Don't handle shortcuts when typing in inputs
+    if(isInputFocused()) return;
+
+    const key = e.key.toLowerCase();
+
+    if(key === '?') { e.preventDefault(); if(helpOpen) closeHelp(); else openHelp(); return; }
+    if(key === '/') { e.preventDefault(); document.getElementById('searchInput').focus(); return; }
+
+    if(key === 'j') {
+        e.preventDefault();
+        const cards = getAllCards();
+        if(cards.length === 0) return;
+        setKbFocus(Math.min(kbFocusIdx + 1, cards.length - 1));
+        return;
+    }
+    if(key === 'k' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        const cards = getAllCards();
+        if(cards.length === 0) return;
+        if(kbFocusIdx < 0) { setKbFocus(cards.length - 1); return; }
+        setKbFocus(Math.max(kbFocusIdx - 1, 0));
+        return;
+    }
+    if(e.key === 'Enter' && kbFocusIdx >= 0) {
+        e.preventDefault();
+        const cards = getAllCards();
+        if(cards[kbFocusIdx]) cards[kbFocusIdx].click();
+        return;
+    }
+    if(key === 'a') {
+        // Approve if waiting_approval panel is open
+        const btn = document.querySelector('#approvalPanel .btn-green');
+        if(btn) { e.preventDefault(); btn.click(); }
+        return;
+    }
+    if(key === 'r') {
+        // Reject if waiting_approval panel is open
+        const btn = document.querySelector('#approvalPanel .btn-red');
+        if(btn) { e.preventDefault(); btn.click(); }
+        return;
+    }
+});
 
 // ── Panel Resize (outer width) ──
 (function() {

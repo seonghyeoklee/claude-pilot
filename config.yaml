@@ -4,6 +4,7 @@ auto_approve: true
 poll_interval: 5
 claude_model: null
 claude_max_budget: null
+claude_timeout_sec: 300
 # Gitflow: branch per task + PR
 gitflow: true
 branch_prefix: feat

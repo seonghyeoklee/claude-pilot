@@ -1011,11 +1011,12 @@ class AgentWorker:
                     # other events — log type for visibility
                     pass
 
+        timeout_sec = self.config.claude_timeout_sec
         try:
-            await asyncio.wait_for(read_stream(), timeout=1800)
+            await asyncio.wait_for(read_stream(), timeout=timeout_sec)
         except asyncio.TimeoutError:
             proc.kill()
-            self._add_log(LogLevel.ERROR, "Claude process timed out (30min)", task_id)
+            self._add_log(LogLevel.ERROR, f"Claude process timed out after {timeout_sec}s ({timeout_sec // 60}min)", task_id)
             return 1, "timeout", cost
         except asyncio.LimitOverrunError:
             # Stream line exceeded buffer limit — drain and continue

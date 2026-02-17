@@ -703,12 +703,12 @@ class AgentWorker:
             await self.db.set_plan_status(plan_id, PlanStatus.DRAFT)
             return False
 
-        # Create tasks in DB
+        # Create tasks in DB (inherit epic_id from plan)
         for order, td in enumerate(tasks_data):
             title = td.get("title", f"Task {order + 1}")
             desc = td.get("description", "")
             target = td.get("target", "")
-            await self.db.create_plan_task(plan_id, title, desc, target, order)
+            await self.db.create_plan_task(plan_id, title, desc, target, order, epic_id=plan.epic_id)
 
         self._add_log(LogLevel.SYSTEM, f"Plan #{plan_id} decomposed into {len(tasks_data)} tasks")
         await self.db.set_plan_status(plan_id, PlanStatus.REVIEWING)

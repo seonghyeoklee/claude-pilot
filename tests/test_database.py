@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.database import Database
-from app.models import PlanCreate, PlanStatus, PlanUpdate, TaskCreate, TaskPriority, TaskStatus, TaskUpdate
+from app.models import EpicCreate, EpicStatus, EpicUpdate, PlanCreate, PlanStatus, PlanUpdate, TaskCreate, TaskPriority, TaskStatus, TaskUpdate
 
 
 @pytest.fixture
@@ -417,3 +417,233 @@ async def test_plan_task_migration(db: Database):
     assert t.plan_id is None
     assert t.target == ""
     assert t.task_order == 0
+
+
+# ── Epic CRUD Tests ──
+
+
+async def test_create_epic(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Auth System", description="JWT auth", color="#a78bfa"))
+    assert epic.id > 0
+    assert epic.title == "Auth System"
+    assert epic.description == "JWT auth"
+    assert epic.status == EpicStatus.OPEN
+    assert epic.color == "#a78bfa"
+    assert epic.created_at
+    assert epic.updated_at
+
+
+async def test_get_epic(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Get Epic"))
+    fetched = await db.get_epic(epic.id)
+    assert fetched is not None
+    assert fetched.title == "Get Epic"
+
+
+async def test_get_epic_nonexistent(db: Database):
+    assert await db.get_epic(9999) is None
+
+
+async def test_list_epics(db: Database):
+    await db.create_epic(EpicCreate(title="A"))
+    await db.create_epic(EpicCreate(title="B"))
+    epics = await db.list_epics()
+    assert len(epics) == 2
+
+
+async def test_list_epics_filter_status(db: Database):
+    e1 = await db.create_epic(EpicCreate(title="Open"))
+    e2 = await db.create_epic(EpicCreate(title="Done"))
+    await db.update_epic(e2.id, EpicUpdate(status=EpicStatus.DONE))
+    open_epics = await db.list_epics(EpicStatus.OPEN)
+    assert len(open_epics) == 1
+    assert open_epics[0].title == "Open"
+
+
+async def test_update_epic(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Old", color="#000"))
+    updated = await db.update_epic(epic.id, EpicUpdate(title="New", color="#fff", description="Updated"))
+    assert updated.title == "New"
+    assert updated.color == "#fff"
+    assert updated.description == "Updated"
+
+
+async def test_update_epic_status(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Status"))
+    updated = await db.update_epic(epic.id, EpicUpdate(status=EpicStatus.IN_PROGRESS))
+    assert updated.status == EpicStatus.IN_PROGRESS
+
+
+async def test_update_epic_nonexistent(db: Database):
+    assert await db.update_epic(9999, EpicUpdate(title="X")) is None
+
+
+async def test_update_epic_no_changes(db: Database):
+    epic = await db.create_epic(EpicCreate(title="NoOp"))
+    result = await db.update_epic(epic.id, EpicUpdate())
+    assert result.title == "NoOp"
+
+
+async def test_delete_epic(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Del"))
+    assert await db.delete_epic(epic.id)
+    assert await db.get_epic(epic.id) is None
+
+
+async def test_delete_epic_nonexistent(db: Database):
+    assert not await db.delete_epic(9999)
+
+
+async def test_delete_epic_unlinks_tasks(db: Database):
+    """Deleting an epic sets epic_id to NULL on tasks, doesn't delete them."""
+    epic = await db.create_epic(EpicCreate(title="Unlink"))
+    t = await db.create_task(TaskCreate(title="Linked task", epic_id=epic.id))
+    assert t.epic_id == epic.id
+    await db.delete_epic(epic.id)
+    task = await db.get_task(t.id)
+    assert task is not None
+    assert task.epic_id is None
+
+
+async def test_delete_epic_unlinks_plans(db: Database):
+    """Deleting an epic sets epic_id to NULL on plans, doesn't delete them."""
+    epic = await db.create_epic(EpicCreate(title="Unlink Plans"))
+    plan = await db.create_plan(PlanCreate(title="Linked plan", epic_id=epic.id))
+    assert plan.epic_id == epic.id
+    await db.delete_epic(epic.id)
+    fetched_plan = await db.get_plan(plan.id)
+    assert fetched_plan is not None
+    assert fetched_plan.epic_id is None
+
+
+# ── Epic-Task Relationship Tests ──
+
+
+async def test_create_task_with_epic_id(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    task = await db.create_task(TaskCreate(title="Task", epic_id=epic.id))
+    assert task.epic_id == epic.id
+    fetched = await db.get_task(task.id)
+    assert fetched.epic_id == epic.id
+
+
+async def test_update_task_epic_id(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    task = await db.create_task(TaskCreate(title="Task"))
+    assert task.epic_id is None
+    updated = await db.update_task(task.id, TaskUpdate(epic_id=epic.id))
+    assert updated.epic_id == epic.id
+
+
+async def test_update_task_remove_epic(db: Database):
+    """Setting epic_id=0 removes task from epic."""
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    task = await db.create_task(TaskCreate(title="Task", epic_id=epic.id))
+    assert task.epic_id == epic.id
+    updated = await db.update_task(task.id, TaskUpdate(epic_id=0))
+    assert updated.epic_id is None
+
+
+async def test_get_epic_tasks(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    await db.create_task(TaskCreate(title="T1", epic_id=epic.id))
+    await db.create_task(TaskCreate(title="T2", epic_id=epic.id))
+    await db.create_task(TaskCreate(title="T3"))  # no epic
+    tasks = await db.get_epic_tasks(epic.id)
+    assert len(tasks) == 2
+    assert {t.title for t in tasks} == {"T1", "T2"}
+
+
+async def test_get_epic_tasks_includes_plan_tasks(db: Database):
+    """get_epic_tasks includes plan-generated tasks that belong to the epic."""
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    plan = await db.create_plan(PlanCreate(title="Plan", epic_id=epic.id))
+    await db.create_plan_task(plan.id, "PT1", "", "be", 0, epic_id=epic.id)
+    await db.create_task(TaskCreate(title="Manual", epic_id=epic.id))
+    tasks = await db.get_epic_tasks(epic.id)
+    assert len(tasks) == 2
+
+
+async def test_get_epic_plans(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    await db.create_plan(PlanCreate(title="P1", epic_id=epic.id))
+    await db.create_plan(PlanCreate(title="P2", epic_id=epic.id))
+    await db.create_plan(PlanCreate(title="P3"))  # no epic
+    plans = await db.get_epic_plans(epic.id)
+    assert len(plans) == 2
+    assert {p.title for p in plans} == {"P1", "P2"}
+
+
+async def test_get_epic_stats(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Stats"))
+    t1 = await db.create_task(TaskCreate(title="A", epic_id=epic.id))
+    t2 = await db.create_task(TaskCreate(title="B", epic_id=epic.id))
+    t3 = await db.create_task(TaskCreate(title="C", epic_id=epic.id))
+    await db.set_task_done(t1.id)
+    await db.set_task_done(t2.id)
+    stats = await db.get_epic_stats(epic.id)
+    assert stats["total"] == 3
+    assert stats["done"] == 2
+    assert stats["by_status"]["done"] == 2
+    assert stats["by_status"]["pending"] == 1
+
+
+async def test_get_epic_stats_empty(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Empty"))
+    stats = await db.get_epic_stats(epic.id)
+    assert stats["total"] == 0
+    assert stats["done"] == 0
+
+
+async def test_list_tasks_filter_by_epic(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    await db.create_task(TaskCreate(title="In epic", epic_id=epic.id))
+    await db.create_task(TaskCreate(title="No epic"))
+    epic_tasks = await db.list_tasks(epic_id=epic.id)
+    assert len(epic_tasks) == 1
+    assert epic_tasks[0].title == "In epic"
+
+
+async def test_list_tasks_filter_no_epic(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    await db.create_task(TaskCreate(title="In epic", epic_id=epic.id))
+    await db.create_task(TaskCreate(title="No epic"))
+    orphan_tasks = await db.list_tasks(epic_id=None)
+    assert len(orphan_tasks) == 1
+    assert orphan_tasks[0].title == "No epic"
+
+
+async def test_create_plan_with_epic_id(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    plan = await db.create_plan(PlanCreate(title="Plan", epic_id=epic.id))
+    assert plan.epic_id == epic.id
+
+
+async def test_update_plan_epic_id(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    plan = await db.create_plan(PlanCreate(title="Plan"))
+    assert plan.epic_id is None
+    updated = await db.update_plan(plan.id, PlanUpdate(epic_id=epic.id))
+    assert updated.epic_id == epic.id
+
+
+async def test_update_plan_remove_epic(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    plan = await db.create_plan(PlanCreate(title="Plan", epic_id=epic.id))
+    updated = await db.update_plan(plan.id, PlanUpdate(epic_id=0))
+    assert updated.epic_id is None
+
+
+async def test_create_plan_task_with_epic_id(db: Database):
+    epic = await db.create_epic(EpicCreate(title="Epic"))
+    plan = await db.create_plan(PlanCreate(title="Plan"))
+    task = await db.create_plan_task(plan.id, "Task", "Desc", "be", 0, epic_id=epic.id)
+    assert task.epic_id == epic.id
+
+
+async def test_epic_migration(db: Database):
+    """Verify epic_id column exists on tasks and plans."""
+    t = await db.create_task(TaskCreate(title="Normal"))
+    assert t.epic_id is None
+    p = await db.create_plan(PlanCreate(title="Normal"))
+    assert p.epic_id is None

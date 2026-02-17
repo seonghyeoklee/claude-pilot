@@ -8,6 +8,10 @@ from pathlib import Path
 import aiosqlite
 
 from app.models import (
+    Epic,
+    EpicCreate,
+    EpicStatus,
+    EpicUpdate,
     LogEntry,
     LogLevel,
     Plan,
@@ -65,6 +69,18 @@ CREATE TABLE IF NOT EXISTS plans (
 )
 """
 
+_CREATE_EPICS_TABLE = """
+CREATE TABLE IF NOT EXISTS epics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    status TEXT DEFAULT 'open',
+    color TEXT DEFAULT '',
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
 
 class Database:
     def __init__(self, db_path: str = "data/tasks.db") -> None:
@@ -78,6 +94,7 @@ class Database:
         await self._db.execute(_CREATE_TABLE)
         await self._db.execute(_CREATE_LOGS_TABLE)
         await self._db.execute(_CREATE_PLANS_TABLE)
+        await self._db.execute(_CREATE_EPICS_TABLE)
         await self._db.commit()
         # Migrate: add labels column if missing
         async with self._db.execute("PRAGMA table_info(tasks)") as cur:
@@ -97,6 +114,15 @@ class Database:
             await self._db.execute("ALTER TABLE tasks ADD COLUMN target TEXT DEFAULT ''")
             await self._db.execute("ALTER TABLE tasks ADD COLUMN task_order INTEGER DEFAULT 0")
             await self._db.commit()
+        if "epic_id" not in cols:
+            await self._db.execute("ALTER TABLE tasks ADD COLUMN epic_id INTEGER")
+            await self._db.commit()
+        # Migrate plans: add epic_id if missing
+        async with self._db.execute("PRAGMA table_info(plans)") as cur:
+            plan_cols = {row[1] for row in await cur.fetchall()}
+        if "epic_id" not in plan_cols:
+            await self._db.execute("ALTER TABLE plans ADD COLUMN epic_id INTEGER")
+            await self._db.commit()
 
     async def close(self) -> None:
         if self._db:
@@ -111,8 +137,8 @@ class Database:
     async def create_task(self, data: TaskCreate) -> Task:
         now = _now_iso()
         cursor = await self._db.execute(
-            "INSERT INTO tasks (title, description, priority, status, labels, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (data.title, data.description, data.priority.value, TaskStatus.PENDING.value, json.dumps(data.labels), now, now),
+            "INSERT INTO tasks (title, description, priority, status, labels, epic_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (data.title, data.description, data.priority.value, TaskStatus.PENDING.value, json.dumps(data.labels), data.epic_id, now, now),
         )
         await self._db.commit()
         return await self.get_task(cursor.lastrowid)
@@ -122,8 +148,9 @@ class Database:
             row = await cur.fetchone()
             return self._row_to_task(row) if row else None
 
-    async def list_tasks(self, status: TaskStatus | None = None, label: str | None = None, search: str | None = None, *, plan_id: int | None | str = "unset") -> list[Task]:
+    async def list_tasks(self, status: TaskStatus | None = None, label: str | None = None, search: str | None = None, *, plan_id: int | None | str = "unset", epic_id: int | None | str = "unset") -> list[Task]:
         # plan_id filtering: "unset" = no filter, None = quick tasks only, int = specific plan
+        # epic_id filtering: "unset" = no filter, None = tasks without epic, int = specific epic
         # 정렬: 활성(in_progress/waiting) → pending → 완료(done/failed), 각 그룹 내 priority DESC
         order = """ORDER BY
             CASE status
@@ -144,6 +171,13 @@ class Database:
         else:
             conditions.append("plan_id = ?")
             params.append(plan_id)
+        if epic_id == "unset":
+            pass  # no epic filter
+        elif epic_id is None:
+            conditions.append("epic_id IS NULL")
+        else:
+            conditions.append("epic_id = ?")
+            params.append(epic_id)
         if status:
             conditions.append("status = ?")
             params.append(status.value)
@@ -181,6 +215,9 @@ class Database:
         if data.labels is not None:
             updates.append("labels = ?")
             values.append(json.dumps(data.labels))
+        if data.epic_id is not None:
+            updates.append("epic_id = ?")
+            values.append(None if data.epic_id == 0 else data.epic_id)
         if not updates:
             return task
         updates.append("updated_at = ?")
@@ -299,8 +336,8 @@ class Database:
     async def create_plan(self, data: PlanCreate) -> Plan:
         now = _now_iso()
         cursor = await self._db.execute(
-            "INSERT INTO plans (title, spec, targets, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (data.title, data.spec, json.dumps(data.targets), PlanStatus.DRAFT.value, now, now),
+            "INSERT INTO plans (title, spec, targets, status, epic_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (data.title, data.spec, json.dumps(data.targets), PlanStatus.DRAFT.value, data.epic_id, now, now),
         )
         await self._db.commit()
         return await self.get_plan(cursor.lastrowid)
@@ -339,6 +376,9 @@ class Database:
         if data.status is not None:
             updates.append("status = ?")
             values.append(data.status.value)
+        if data.epic_id is not None:
+            updates.append("epic_id = ?")
+            values.append(None if data.epic_id == 0 else data.epic_id)
         if not updates:
             return plan
         updates.append("updated_at = ?")
@@ -374,13 +414,13 @@ class Database:
             return [self._row_to_task(r) for r in rows]
 
     async def create_plan_task(
-        self, plan_id: int, title: str, description: str, target: str, task_order: int
+        self, plan_id: int, title: str, description: str, target: str, task_order: int, *, epic_id: int | None = None
     ) -> Task:
         now = _now_iso()
         cursor = await self._db.execute(
-            "INSERT INTO tasks (title, description, priority, status, labels, created_at, updated_at, plan_id, target, task_order) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (title, description, 1, TaskStatus.PENDING.value, "[]", now, now, plan_id, target, task_order),
+            "INSERT INTO tasks (title, description, priority, status, labels, created_at, updated_at, plan_id, target, task_order, epic_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (title, description, 1, TaskStatus.PENDING.value, "[]", now, now, plan_id, target, task_order, epic_id),
         )
         await self._db.commit()
         return await self.get_task(cursor.lastrowid)
@@ -400,6 +440,109 @@ class Database:
         ) as cur:
             row = await cur.fetchone()
             return self._row_to_task(row) if row else None
+
+    # ── Epics ──
+
+    def _row_to_epic(self, row: aiosqlite.Row) -> Epic:
+        return Epic(**dict(row))
+
+    async def create_epic(self, data: EpicCreate) -> Epic:
+        now = _now_iso()
+        cursor = await self._db.execute(
+            "INSERT INTO epics (title, description, status, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (data.title, data.description, EpicStatus.OPEN.value, data.color, now, now),
+        )
+        await self._db.commit()
+        return await self.get_epic(cursor.lastrowid)
+
+    async def get_epic(self, epic_id: int) -> Epic | None:
+        async with self._db.execute("SELECT * FROM epics WHERE id = ?", (epic_id,)) as cur:
+            row = await cur.fetchone()
+            return self._row_to_epic(row) if row else None
+
+    async def list_epics(self, status: EpicStatus | None = None) -> list[Epic]:
+        if status:
+            sql = "SELECT * FROM epics WHERE status = ? ORDER BY created_at DESC"
+            params: tuple = (status.value,)
+        else:
+            sql = "SELECT * FROM epics ORDER BY created_at DESC"
+            params = ()
+        async with self._db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_epic(r) for r in rows]
+
+    async def update_epic(self, epic_id: int, data: EpicUpdate) -> Epic | None:
+        epic = await self.get_epic(epic_id)
+        if not epic:
+            return None
+        updates: list[str] = []
+        values: list = []
+        if data.title is not None:
+            updates.append("title = ?")
+            values.append(data.title)
+        if data.description is not None:
+            updates.append("description = ?")
+            values.append(data.description)
+        if data.status is not None:
+            updates.append("status = ?")
+            values.append(data.status.value)
+        if data.color is not None:
+            updates.append("color = ?")
+            values.append(data.color)
+        if not updates:
+            return epic
+        updates.append("updated_at = ?")
+        values.append(_now_iso())
+        values.append(epic_id)
+        await self._db.execute(
+            f"UPDATE epics SET {', '.join(updates)} WHERE id = ?", values
+        )
+        await self._db.commit()
+        return await self.get_epic(epic_id)
+
+    async def delete_epic(self, epic_id: int) -> bool:
+        epic = await self.get_epic(epic_id)
+        if not epic:
+            return False
+        # Unlink tasks and plans (set epic_id to NULL, don't delete them)
+        now = _now_iso()
+        await self._db.execute(
+            "UPDATE tasks SET epic_id = NULL, updated_at = ? WHERE epic_id = ?", (now, epic_id)
+        )
+        await self._db.execute(
+            "UPDATE plans SET epic_id = NULL, updated_at = ? WHERE epic_id = ?", (now, epic_id)
+        )
+        await self._db.execute("DELETE FROM epics WHERE id = ?", (epic_id,))
+        await self._db.commit()
+        return True
+
+    async def get_epic_tasks(self, epic_id: int) -> list[Task]:
+        async with self._db.execute(
+            "SELECT * FROM tasks WHERE epic_id = ? ORDER BY task_order ASC, id ASC",
+            (epic_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_task(r) for r in rows]
+
+    async def get_epic_plans(self, epic_id: int) -> list[Plan]:
+        async with self._db.execute(
+            "SELECT * FROM plans WHERE epic_id = ? ORDER BY created_at DESC",
+            (epic_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_plan(r) for r in rows]
+
+    async def get_epic_stats(self, epic_id: int) -> dict:
+        """Return task count by status for an epic."""
+        async with self._db.execute(
+            "SELECT status, COUNT(*) as cnt FROM tasks WHERE epic_id = ? GROUP BY status",
+            (epic_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+        stats = {row["status"]: row["cnt"] for row in rows}
+        total = sum(stats.values())
+        done = stats.get(TaskStatus.DONE.value, 0)
+        return {"by_status": stats, "total": total, "done": done}
 
     # ── Logs ──
 

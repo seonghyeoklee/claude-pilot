@@ -8,6 +8,13 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
+class EpicStatus(str, Enum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+
 class TaskStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -58,6 +65,8 @@ class Task(BaseModel):
     plan_id: int | None = None
     target: str = ""
     task_order: int = 0
+    # Epic fields
+    epic_id: int | None = None
 
 
 class TaskCreate(BaseModel):
@@ -65,6 +74,7 @@ class TaskCreate(BaseModel):
     description: str = ""
     priority: TaskPriority = TaskPriority.MEDIUM
     labels: list[str] = Field(default_factory=list)
+    epic_id: int | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -73,6 +83,7 @@ class TaskUpdate(BaseModel):
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
     labels: list[str] | None = None
+    epic_id: int | None = None  # 0 = remove from epic
 
 
 class Plan(BaseModel):
@@ -83,12 +94,14 @@ class Plan(BaseModel):
     status: PlanStatus = PlanStatus.DRAFT
     created_at: str = Field(default_factory=lambda: _now_iso())
     updated_at: str = Field(default_factory=lambda: _now_iso())
+    epic_id: int | None = None
 
 
 class PlanCreate(BaseModel):
     title: str
     spec: str = ""
     targets: dict[str, dict] = Field(default_factory=dict)
+    epic_id: int | None = None
 
 
 class PlanUpdate(BaseModel):
@@ -96,6 +109,7 @@ class PlanUpdate(BaseModel):
     spec: str | None = None
     targets: dict[str, dict] | None = None
     status: PlanStatus | None = None
+    epic_id: int | None = None  # 0 = remove from epic
 
 
 class AgentState(str, Enum):
@@ -128,6 +142,29 @@ class LogEntry(BaseModel):
     level: LogLevel = LogLevel.SYSTEM
     message: str = ""
     task_id: int | None = None
+
+
+class Epic(BaseModel):
+    id: int = 0
+    title: str
+    description: str = ""
+    status: EpicStatus = EpicStatus.OPEN
+    color: str = ""
+    created_at: str = Field(default_factory=lambda: _now_iso())
+    updated_at: str = Field(default_factory=lambda: _now_iso())
+
+
+class EpicCreate(BaseModel):
+    title: str
+    description: str = ""
+    color: str = ""
+
+
+class EpicUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: EpicStatus | None = None
+    color: str | None = None
 
 
 class ApprovalRequest(BaseModel):

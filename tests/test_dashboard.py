@@ -1173,3 +1173,234 @@ def test_plan_delete(html):
 def test_plan_detail_polling(html):
     """Plan detail polls for updates on running plans"""
     assert "planPollTimer" in html
+
+
+# ── Epic Navigation Tests ──
+
+
+def test_epic_nav_tab(html):
+    """Epics tab in navigation"""
+    assert "Epics" in html
+    assert 'data-view="epics"' in html
+
+
+def test_epic_nav_tab_onclick(html):
+    """Epics tab has navigate onclick"""
+    assert "navigate('epics')" in html
+
+
+def test_epic_view_container(html):
+    """viewEpics container exists"""
+    assert 'id="viewEpics"' in html
+    assert 'id="epicViewContent"' in html
+
+
+# ── Epic Hash Router Tests ──
+
+
+def test_epic_route_handling(html):
+    """Router handles epics routes"""
+    assert "showView('epics')" in html
+    assert "renderEpicList()" in html
+    assert "renderEpicCreate()" in html
+    assert "loadEpicDetail" in html
+
+
+def test_epic_navigate_function(html):
+    """navigate handles epic routes"""
+    assert "epics/new" in html
+    assert "epics/" in html
+
+
+# ── Epic List Tests ──
+
+
+def test_epic_list_render(html):
+    """renderEpicList function exists"""
+    assert "function renderEpicList()" in html
+
+
+def test_epic_list_api_call(html):
+    """Epic list fetches from /api/epics"""
+    assert "/api/epics" in html
+    assert "function loadEpics()" in html
+
+
+def test_epic_list_new_button(html):
+    """Epic list has 'New Epic' button"""
+    assert "New Epic" in html
+
+
+def test_epic_list_status_groups(html):
+    """Epic list groups by status"""
+    assert "EPIC_STATUS_LABELS" in html
+    assert "'In Progress'" in html
+
+
+# ── Epic Create Tests ──
+
+
+def test_epic_create_form(html):
+    """renderEpicCreate function with form elements"""
+    assert "function renderEpicCreate()" in html
+    assert "epicTitle" in html
+    assert "epicDesc" in html
+
+
+def test_epic_color_picker(html):
+    """Color picker with preset colors"""
+    assert "epic-color-picker" in html
+    assert "epic-color-option" in html
+    assert "EPIC_PRESET_COLORS" in html
+    assert "#a78bfa" in html
+
+
+def test_epic_color_selection(html):
+    """selectEpicColor function"""
+    assert "function selectEpicColor(el)" in html
+
+
+def test_epic_submit(html):
+    """submitEpic function posts to API"""
+    assert "function submitEpic()" in html
+    assert "/api/epics" in html
+
+
+# ── Epic Detail Tests ──
+
+
+def test_epic_detail_load(html):
+    """loadEpicDetail function exists"""
+    assert "function loadEpicDetail(epicId)" in html
+
+
+def test_epic_detail_render(html):
+    """renderEpicDetail function with progress and tasks"""
+    assert "function renderEpicDetail(epic)" in html
+    assert "epic-progress-bar" in html
+    assert "epic-progress-fill" in html
+
+
+def test_epic_detail_status_update(html):
+    """updateEpicStatus function"""
+    assert "function updateEpicStatus(epicId, status)" in html
+    assert "epicStatusSelect" in html
+
+
+def test_epic_delete(html):
+    """deleteEpic function"""
+    assert "function deleteEpic(epicId)" in html
+    assert "Tasks will be unlinked" in html
+
+
+def test_epic_add_task_button(html):
+    """Add Task button in epic detail"""
+    assert "function addTaskToEpic(epicId)" in html
+    assert "Add Task" in html
+
+
+# ── Epic Card CSS Tests ──
+
+
+def test_epic_card_css(html):
+    """Epic card CSS classes"""
+    assert ".epic-card" in html
+    assert ".epic-card-header" in html
+    assert ".epic-card-title" in html
+    assert ".epic-card-meta" in html
+    assert ".epic-card-progress" in html
+
+
+def test_epic_progress_bar_css(html):
+    """Epic progress bar CSS"""
+    assert ".epic-progress-bar" in html
+    assert ".epic-progress-fill" in html
+
+
+def test_epic_status_badge_css(html):
+    """Epic status badge CSS classes"""
+    assert ".epic-status" in html
+    assert ".epic-status-open" in html
+    assert ".epic-status-in_progress" in html
+    assert ".epic-status-done" in html
+    assert ".epic-status-cancelled" in html
+
+
+def test_epic_color_picker_css(html):
+    """Epic color picker CSS"""
+    assert ".epic-color-picker" in html
+    assert ".epic-color-option" in html
+
+
+# ── Epic Badge on Task Cards Tests ──
+
+
+def test_epic_badge_css(html):
+    """Epic badge CSS for task cards"""
+    assert ".epic-badge" in html
+    assert ".epic-badge .epic-badge-dot" in html
+
+
+def test_epic_cache(html):
+    """epicCache for resolving epic names/colors"""
+    assert "epicCache" in html
+    assert "epicCache[t.epic_id]" in html
+
+
+def test_epic_badge_in_card(html):
+    """Task cards show epic badge when epic_id is set"""
+    assert "epicBadgeHtml" in html
+    assert "epic-badge-dot" in html
+
+
+# ── Epic Dropdown in Forms Tests ──
+
+
+def test_epic_dropdown_in_task_form(html):
+    """Add Task form has epic dropdown"""
+    assert 'id="addEpic"' in html
+    assert "No Epic" in html
+
+
+def test_epic_dropdown_in_plan_form(html):
+    """Plan Create form has epic dropdown"""
+    assert 'id="planEpic"' in html
+    assert "populateEpicDropdowns" in html
+
+
+def test_task_form_passes_epic_id(html):
+    """addTask sends epic_id to API"""
+    assert "addEpic" in html
+    assert "epic_id" in html
+
+
+def test_plan_form_passes_epic_id(html):
+    """submitPlan sends epic_id to API"""
+    assert "planEpicId" in html
+
+
+# ── Command Palette Epic Tests ──
+
+
+def test_cmd_palette_create_epic_action(html):
+    """Command palette has Create Epic action"""
+    assert "Create Epic" in html
+    assert "epic-new" in html
+
+
+def test_cmd_palette_view_epics_action(html):
+    """Command palette has View Epics action"""
+    assert "View Epics" in html
+    assert "epic-v" in html
+
+
+def test_cmd_palette_epics_group(html):
+    """Command palette searches epics"""
+    assert "matchedEpics" in html
+    assert "cmd-palette-group-title\">Epics" in html
+
+
+def test_cmd_palette_epic_select(html):
+    """Selecting an epic in palette navigates to it"""
+    assert "item.type === 'epic'" in html
+    assert "item.epic.id" in html

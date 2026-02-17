@@ -12,6 +12,9 @@ from app.agent import AgentWorker
 from app.database import Database
 from app.models import (
     ApprovalRequest,
+    EpicCreate,
+    EpicStatus,
+    EpicUpdate,
     PlanCreate,
     PlanStatus,
     PlanUpdate,
@@ -35,9 +38,16 @@ def _get_agent(request: Request) -> AgentWorker:
 
 
 @router.get("/api/tasks")
-async def list_tasks(status: str | None = None, label: str | None = None, q: str | None = None, db: Database = Depends(_get_db)):
+async def list_tasks(status: str | None = None, label: str | None = None, q: str | None = None, epic_id: str | None = None, db: Database = Depends(_get_db)):
     task_status = TaskStatus(status) if status else None
-    tasks = await db.list_tasks(task_status, label=label, search=q, plan_id=None)
+    # epic_id filter: not provided = no filter, "none" = tasks without epic, number = specific epic
+    epic_filter: int | None | str = "unset"
+    if epic_id is not None:
+        if epic_id.lower() == "none":
+            epic_filter = None
+        else:
+            epic_filter = int(epic_id)
+    tasks = await db.list_tasks(task_status, label=label, search=q, plan_id=None, epic_id=epic_filter)
     return [t.model_dump() for t in tasks]
 
 
@@ -234,4 +244,53 @@ async def reorder_plan_tasks(plan_id: int, body: ReorderRequest, db: Database = 
     if not plan:
         raise HTTPException(404, "Plan not found")
     await db.reorder_plan_tasks(plan_id, body.task_ids)
+    return {"ok": True}
+
+
+# ── Epics ──
+
+
+@router.post("/api/epics", status_code=201)
+async def create_epic(data: EpicCreate, db: Database = Depends(_get_db)):
+    epic = await db.create_epic(data)
+    return epic.model_dump()
+
+
+@router.get("/api/epics")
+async def list_epics(status: str | None = None, db: Database = Depends(_get_db)):
+    epic_status = EpicStatus(status) if status else None
+    epics = await db.list_epics(epic_status)
+    result = []
+    for e in epics:
+        d = e.model_dump()
+        d["stats"] = await db.get_epic_stats(e.id)
+        result.append(d)
+    return result
+
+
+@router.get("/api/epics/{epic_id}")
+async def get_epic(epic_id: int, db: Database = Depends(_get_db)):
+    epic = await db.get_epic(epic_id)
+    if not epic:
+        raise HTTPException(404, "Epic not found")
+    result = epic.model_dump()
+    result["tasks"] = [t.model_dump() for t in await db.get_epic_tasks(epic_id)]
+    result["plans"] = [p.model_dump() for p in await db.get_epic_plans(epic_id)]
+    result["stats"] = await db.get_epic_stats(epic_id)
+    return result
+
+
+@router.patch("/api/epics/{epic_id}")
+async def update_epic(epic_id: int, data: EpicUpdate, db: Database = Depends(_get_db)):
+    epic = await db.update_epic(epic_id, data)
+    if not epic:
+        raise HTTPException(404, "Epic not found")
+    return epic.model_dump()
+
+
+@router.delete("/api/epics/{epic_id}")
+async def delete_epic(epic_id: int, db: Database = Depends(_get_db)):
+    ok = await db.delete_epic(epic_id)
+    if not ok:
+        raise HTTPException(404, "Epic not found")
     return {"ok": True}

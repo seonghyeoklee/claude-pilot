@@ -13,7 +13,7 @@ import pytest
 from app.agent import AgentWorker
 from app.config import AppConfig
 from app.database import Database
-from app.models import AgentState, LogLevel, PlanCreate, PlanStatus, TaskCreate, TaskStatus
+from app.models import AgentState, EpicCreate, LogLevel, PlanCreate, PlanStatus, TaskCreate, TaskStatus
 
 
 @pytest.fixture
@@ -589,3 +589,33 @@ async def test_parse_json_from_output(setup):
     # Invalid JSON
     result = agent._parse_json_from_output('not json at all')
     assert result is None
+
+
+@patch("app.agent.asyncio.create_subprocess_exec")
+async def test_decompose_plan_inherits_epic_id(mock_exec, setup):
+    """Plan decomposition passes epic_id to created tasks."""
+    agent, db, _ = setup
+
+    epic = await db.create_epic(EpicCreate(title="Auth Epic"))
+    plan = await db.create_plan(PlanCreate(
+        title="Auth Plan",
+        spec="Build auth",
+        targets={"backend": {"project": "/tmp"}},
+        epic_id=epic.id,
+    ))
+
+    tasks_json = json.dumps([
+        {"title": "Setup DB", "description": "Create table", "target": "backend"},
+        {"title": "Login API", "description": "POST /login", "target": "backend"},
+    ])
+    stdout = [
+        json.dumps({"type": "result", "result": tasks_json, "total_cost_usd": 0.01}),
+    ]
+    mock_exec.return_value = _make_mock_process(stdout, returncode=0)
+
+    result = await agent.decompose_plan(plan.id)
+    assert result is True
+
+    tasks = await db.get_plan_tasks(plan.id)
+    assert len(tasks) == 2
+    assert all(t.epic_id == epic.id for t in tasks)

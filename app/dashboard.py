@@ -742,6 +742,51 @@ _EXTRA_CSS = """
     font-family: 'SF Mono','Fira Code',monospace; font-size: 11px; line-height: 1.6;
     overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary);
 }
+
+/* ── Epic Card ── */
+.epic-card {
+    background: var(--bg-card); border-radius: 10px; padding: 16px; border: 1px solid var(--border);
+    cursor: pointer; transition: border-color 0.15s, background 0.15s; margin-bottom: 10px;
+}
+.epic-card:hover { border-color: var(--accent); background: var(--hover-overlay); }
+.epic-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.epic-card-title { font-size: 16px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+.epic-card-meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-tertiary); }
+.epic-card-progress { margin-top: 10px; }
+
+/* ── Epic Progress Bar ── */
+.epic-progress-bar {
+    height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;
+}
+.epic-progress-fill {
+    height: 100%; background: linear-gradient(90deg, #22c55e, #4ade80); border-radius: 3px; transition: width 0.5s;
+}
+
+/* ── Epic Status Badge ── */
+.epic-status { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.epic-status-open { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.epic-status-in_progress { background: rgba(88,166,255,0.15); color: var(--accent); }
+.epic-status-done { background: rgba(34,197,94,0.15); color: #22c55e; }
+.epic-status-cancelled { background: rgba(107,114,128,0.15); color: #9ca3af; }
+
+/* ── Epic Color Picker ── */
+.epic-color-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.epic-color-option {
+    width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent;
+    transition: border-color 0.15s, transform 0.15s;
+}
+.epic-color-option:hover { transform: scale(1.15); }
+.epic-color-option.selected { border-color: #fff; }
+
+/* ── Epic Badge on Task Cards ── */
+.epic-badge {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600;
+    padding: 1px 6px; border-radius: 4px; color: #fff; background: rgba(255,255,255,0.1);
+    max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.epic-badge .epic-badge-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
 """
 
 _BODY = """
@@ -773,7 +818,13 @@ _BODY = """
     <!-- Navigation Tabs -->
     <div class="nav-tabs" id="navTabs">
         <button class="nav-tab active" data-view="tasks" onclick="navigate('tasks')">Quick Tasks</button>
+        <button class="nav-tab" data-view="epics" onclick="navigate('epics')">Epics</button>
         <button class="nav-tab" data-view="plans" onclick="navigate('plans')">Plans</button>
+    </div>
+
+    <!-- Epics View (hidden by default) -->
+    <div id="viewEpics" style="display:none;">
+        <div id="epicViewContent"></div>
     </div>
 
     <!-- Plans View (hidden by default) -->
@@ -797,6 +848,9 @@ _BODY = """
                 <option value="1" selected>Medium</option>
                 <option value="2">High</option>
                 <option value="3">Urgent</option>
+            </select>
+            <select id="addEpic" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;">
+                <option value="">No Epic</option>
             </select>
             <button class="btn btn-blue btn-sm" onclick="addTask()">Add Task</button>
             <button class="btn btn-gray btn-sm" onclick="toggleAddForm()">Cancel</button>
@@ -893,6 +947,7 @@ let searchTimer = null;
 let activeStatusFilter = localStorage.getItem('statusFilter') || 'all';
 let approvalShownFor = null;  // track which task auto-opened for approval
 let _lastSlideKey = null;  // diff check to avoid unnecessary re-render
+let epicCache = {};  // id → {title, color}
 let _lastKanbanKey = null;  // diff check for kanban board
 
 // Task-specific log storage: { taskId: [{timestamp, level, message}, ...] }
@@ -996,6 +1051,13 @@ function renderCard(t, stagger, changed) {
     if(t.status === 'pending') actions.push(`<button class="btn btn-gray btn-sm" onclick="event.stopPropagation();deleteTask(${t.id})" title="Delete">×</button>`);
     const labelPills = (t.labels || []).map(l => `<span class="label-badge">${esc(l)}</span>`).join('');
 
+    // Epic badge
+    let epicBadgeHtml = '';
+    if(t.epic_id && epicCache[t.epic_id]) {
+        const ec = epicCache[t.epic_id];
+        epicBadgeHtml = `<span class="epic-badge"><span class="epic-badge-dot" style="background:${ec.color || '#6b7280'}"></span>${esc(ec.title)}</span>`;
+    }
+
     // Time display: elapsed for running/done, relative for others
     let timeHtml = '';
     if(elapsed) {
@@ -1018,6 +1080,7 @@ function renderCard(t, stagger, changed) {
             <div class="k-card-tier2">
                 <span class="k-card-id">#${t.id}</span>
                 ${t.status === 'in_progress' ? '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' : ''}
+                ${epicBadgeHtml}
                 ${labelPills}
             </div>
             <div class="k-card-tier3">
@@ -1155,11 +1218,16 @@ async function addTask() {
     const pri = parseInt(document.getElementById('addPriority').value);
     const labelsRaw = document.getElementById('addLabels').value.trim();
     const labels = labelsRaw ? labelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const epicVal = document.getElementById('addEpic').value;
+    const epicId = epicVal ? parseInt(epicVal) : null;
+    const body = {title, description:desc, priority:pri, labels};
+    if(epicId) body.epic_id = epicId;
     await fetch('/api/tasks', {method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({title, description:desc, priority:pri, labels})});
+        body:JSON.stringify(body)});
     document.getElementById('addTitle').value = '';
     document.getElementById('addDesc').value = '';
     document.getElementById('addLabels').value = '';
+    document.getElementById('addEpic').value = '';
     document.getElementById('addForm').classList.remove('visible');
     showToast('Task created', 'success');
     loadTasks();
@@ -1582,6 +1650,8 @@ const CMD_ACTIONS = [
     {id:'start',   icon:'\u25B6', label:'Start Agent',          fn:agentStart,   hint:''},
     {id:'stop',    icon:'\u25A0', label:'Stop Agent',           fn:agentStop,    hint:''},
     {id:'add',     icon:'+',      label:'Add Task',             fn:toggleAddForm, hint:''},
+    {id:'epic-new',icon:'+',      label:'Create Epic',          fn:()=>navigate('epics/new'), hint:'Epic'},
+    {id:'epic-v',  icon:'\u2630', label:'View Epics',           fn:()=>navigate('epics'),     hint:'Epic'},
     {id:'f-all',   icon:'\u2630', label:'Filter: All',          fn:()=>setStatusFilter('all'),       hint:'Status'},
     {id:'f-pend',  icon:'\u2630', label:'Filter: Pending',      fn:()=>setStatusFilter('pending'),   hint:'Status'},
     {id:'f-run',   icon:'\u2630', label:'Filter: Running',      fn:()=>setStatusFilter('in_progress'),hint:'Status'},
@@ -1622,6 +1692,22 @@ function renderCmdResults(query) {
             cmdItems.push({type:'task', task:t});
             html += `<div class="cmd-palette-item${idx===cmdActiveIdx?' active':''}" data-idx="${idx}" onmouseenter="cmdHover(${idx})" onclick="cmdSelect(${idx})">
                 <span class="cmd-icon">#</span><span class="cmd-label">${esc(t.title)}</span><span class="cmd-hint">${STATUS_LABELS[t.status]||t.status}</span>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Epics group
+    const matchedEpics = allEpics.filter(e =>
+        e.title.toLowerCase().includes(q) || ('#e' + e.id).includes(q)
+    );
+    if(matchedEpics.length > 0) {
+        html += `<div class="cmd-palette-group"><div class="cmd-palette-group-title">Epics</div>`;
+        matchedEpics.slice(0, 5).forEach(e => {
+            const idx = cmdItems.length;
+            cmdItems.push({type:'epic', epic:e});
+            html += `<div class="cmd-palette-item${idx===cmdActiveIdx?' active':''}" data-idx="${idx}" onmouseenter="cmdHover(${idx})" onclick="cmdSelect(${idx})">
+                <span class="cmd-icon" style="color:${e.color || '#6b7280'};">\u25CF</span><span class="cmd-label">${esc(e.title)}</span><span class="cmd-hint">${EPIC_STATUS_LABELS[e.status] || e.status}</span>
             </div>`;
         });
         html += `</div>`;
@@ -1668,6 +1754,8 @@ function cmdSelect(idx) {
     closeCmdPalette();
     if(item.type === 'task') {
         selectTask(item.task.id);
+    } else if(item.type === 'epic') {
+        navigate(`epics/${item.epic.id}`);
     } else if(item.type === 'action') {
         item.action.fn();
     }
@@ -2009,10 +2097,17 @@ function sectionHtml(key, title, content) {
 
 let currentView = 'tasks';
 let currentPlanId = null;
+let currentEpicId = null;
 
 function navigate(route) {
     if(route === 'tasks') {
         window.location.hash = '#tasks';
+    } else if(route === 'epics') {
+        window.location.hash = '#epics';
+    } else if(route.startsWith('epics/new')) {
+        window.location.hash = '#epics/new';
+    } else if(route.startsWith('epics/')) {
+        window.location.hash = '#' + route;
     } else if(route === 'plans') {
         window.location.hash = '#plans';
     } else if(route.startsWith('plans/new')) {
@@ -2035,6 +2130,19 @@ function handleRoute() {
     if(hash === 'tasks' || hash === '') {
         showView('tasks');
         currentView = 'tasks';
+    } else if(hash === 'epics') {
+        showView('epics');
+        currentView = 'epics';
+        renderEpicList();
+    } else if(hash === 'epics/new') {
+        showView('epics');
+        currentView = 'epics';
+        renderEpicCreate();
+    } else if(parts[0] === 'epics' && parts[1]) {
+        showView('epics');
+        currentView = 'epics';
+        currentEpicId = parseInt(parts[1]);
+        loadEpicDetail(currentEpicId);
     } else if(hash === 'plans') {
         showView('plans');
         currentView = 'plans';
@@ -2053,10 +2161,259 @@ function handleRoute() {
 
 function showView(view) {
     document.getElementById('viewTasks').style.display = view === 'tasks' ? '' : 'none';
+    document.getElementById('viewEpics').style.display = view === 'epics' ? '' : 'none';
     document.getElementById('viewPlans').style.display = view === 'plans' ? '' : 'none';
 }
 
 window.addEventListener('hashchange', handleRoute);
+
+// ── Epic Cache + Dropdown ──
+
+let allEpics = [];
+
+async function loadEpics() {
+    try {
+        const res = await fetch('/api/epics');
+        allEpics = await res.json();
+        epicCache = {};
+        allEpics.forEach(e => { epicCache[e.id] = {title: e.title, color: e.color}; });
+    } catch(e) { console.error('loadEpics', e); }
+}
+
+function populateEpicDropdowns() {
+    const selects = document.querySelectorAll('#addEpic, #planEpic');
+    selects.forEach(sel => {
+        const val = sel.value;
+        sel.innerHTML = '<option value="">No Epic</option>';
+        allEpics.forEach(e => {
+            sel.innerHTML += `<option value="${e.id}">${esc(e.title)}</option>`;
+        });
+        sel.value = val;
+    });
+}
+
+// ── Epic List ──
+
+const EPIC_STATUS_LABELS = {open:'Open', in_progress:'In Progress', done:'Done', cancelled:'Cancelled'};
+
+function renderEpicList() {
+    const content = document.getElementById('epicViewContent');
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:#666">Loading epics...</div>';
+    loadEpics().then(() => {
+        let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
+        html += '<h2 style="color:#fff;font-size:18px;margin:0;">Epics</h2>';
+        html += '<button class="btn btn-blue" onclick="navigate(\'epics/new\')">+ New Epic</button>';
+        html += '</div>';
+
+        if(allEpics.length === 0) {
+            html += '<div style="text-align:center;padding:60px;color:#666;font-style:italic;">No epics yet. Create one to group related tasks.</div>';
+        } else {
+            const groups = [
+                {label:'In Progress', statuses:['in_progress']},
+                {label:'Open', statuses:['open']},
+                {label:'Done', statuses:['done']},
+                {label:'Cancelled', statuses:['cancelled']},
+            ];
+            for(const g of groups) {
+                const epics = allEpics.filter(e => g.statuses.includes(e.status));
+                if(epics.length === 0) continue;
+                html += `<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:600;color:var(--text-tertiary);margin-bottom:8px;">${g.label} (${epics.length})</div>`;
+                for(const e of epics) {
+                    const stats = e.stats || {total:0, done:0};
+                    const pct = stats.total > 0 ? Math.round(stats.done / stats.total * 100) : 0;
+                    const colorDot = e.color ? `<span style="width:10px;height:10px;border-radius:50%;background:${e.color};display:inline-block;"></span>` : '';
+                    const ts = e.updated_at || e.created_at;
+                    html += `<div class="epic-card" onclick="navigate('epics/${e.id}')">
+                        <div class="epic-card-header">
+                            <div class="epic-card-title">${colorDot} ${esc(e.title)}</div>
+                            <div class="epic-card-meta">
+                                <span class="epic-status epic-status-${e.status}">${EPIC_STATUS_LABELS[e.status] || e.status}</span>
+                                <span>${stats.total} task${stats.total !== 1 ? 's' : ''}</span>
+                                ${ts ? `<span class="time-relative" data-time="${esc(ts)}" title="${fmtAbsolute(ts)}">${timeAgo(ts)}</span>` : ''}
+                            </div>
+                        </div>
+                        ${stats.total > 0 ? `<div class="epic-card-progress"><div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${pct}%"></div></div></div>` : ''}
+                    </div>`;
+                }
+                html += '</div>';
+            }
+        }
+        content.innerHTML = html;
+    });
+}
+
+// ── Epic Create ──
+
+const EPIC_PRESET_COLORS = ['#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#22d3ee','#60a5fa','#f87171'];
+
+function renderEpicCreate() {
+    const content = document.getElementById('epicViewContent');
+    let colorOptions = EPIC_PRESET_COLORS.map((c, i) =>
+        `<div class="epic-color-option${i===0?' selected':''}" style="background:${c}" data-color="${c}" onclick="selectEpicColor(this)"></div>`
+    ).join('');
+    content.innerHTML = `
+    <div class="plan-form">
+        <h2>New Epic</h2>
+        <div class="plan-form-group">
+            <label>Title</label>
+            <input id="epicTitle" placeholder="e.g., Authentication System">
+        </div>
+        <div class="plan-form-group">
+            <label>Description (optional)</label>
+            <textarea id="epicDesc" placeholder="Describe the goal of this epic..." style="min-height:80px;"></textarea>
+        </div>
+        <div class="plan-form-group">
+            <label>Color</label>
+            <div class="epic-color-picker" id="epicColorPicker">${colorOptions}</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button class="btn btn-blue" onclick="submitEpic()">Create</button>
+            <button class="btn btn-gray" onclick="navigate('epics')">Cancel</button>
+        </div>
+    </div>`;
+}
+
+function selectEpicColor(el) {
+    document.querySelectorAll('.epic-color-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+}
+
+async function submitEpic() {
+    const title = document.getElementById('epicTitle').value.trim();
+    if(!title) { showToast('Title is required', 'error'); return; }
+    const description = document.getElementById('epicDesc').value.trim();
+    const selectedColor = document.querySelector('.epic-color-option.selected');
+    const color = selectedColor ? selectedColor.dataset.color : '';
+    try {
+        const res = await fetch('/api/epics', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({title, description, color})
+        });
+        const epic = await res.json();
+        showToast('Epic created', 'success');
+        navigate(`epics/${epic.id}`);
+    } catch(e) { showToast('Failed to create epic', 'error'); }
+}
+
+// ── Epic Detail ──
+
+async function loadEpicDetail(epicId) {
+    const content = document.getElementById('epicViewContent');
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:#666">Loading...</div>';
+
+    try {
+        const res = await fetch(`/api/epics/${epicId}`);
+        if(!res.ok) { content.innerHTML = '<div style="color:#ef4444;padding:40px;text-align:center;">Epic not found</div>'; return; }
+        const epic = await res.json();
+        renderEpicDetail(epic);
+    } catch(e) {
+        content.innerHTML = '<div style="color:#ef4444;padding:40px;text-align:center;">Failed to load epic</div>';
+    }
+}
+
+function renderEpicDetail(epic) {
+    const content = document.getElementById('epicViewContent');
+    const stats = epic.stats || {total:0, done:0};
+    const pct = stats.total > 0 ? Math.round(stats.done / stats.total * 100) : 0;
+    const colorDot = epic.color ? `<span style="width:12px;height:12px;border-radius:50%;background:${epic.color};display:inline-block;"></span>` : '';
+    const tasks = epic.tasks || [];
+    const plans = epic.plans || [];
+
+    const TASK_ICONS = {done:'\u2705', in_progress:'\uD83D\uDD04', failed:'\u274C', waiting_approval:'\uD83D\uDD14', pending:'\u23F3'};
+
+    let tasksHtml = '';
+    if(tasks.length > 0) {
+        tasksHtml = '<div class="task-flow">';
+        for(const t of tasks) {
+            const icon = TASK_ICONS[t.status] || '\u23F3';
+            const planBadge = t.plan_id ? '<span class="target-badge" style="font-size:9px;">Plan</span>' : '<span class="target-badge" style="font-size:9px;">manual</span>';
+            tasksHtml += `<div class="task-flow-item" onclick="selectTask(${t.id})">
+                <span class="task-flow-icon">${icon}</span>
+                <span class="task-flow-title">${esc(t.title)}</span>
+                ${planBadge}
+            </div>`;
+        }
+        tasksHtml += '</div>';
+    } else {
+        tasksHtml = '<div style="color:var(--text-tertiary);font-style:italic;padding:8px 0;">No tasks yet</div>';
+    }
+
+    let plansHtml = '';
+    if(plans.length > 0) {
+        for(const p of plans) {
+            plansHtml += `<div class="plan-card" onclick="navigate('plans/${p.id}')" style="margin-bottom:8px;">
+                <div class="plan-card-header">
+                    <span class="plan-card-title" style="font-size:14px;">${esc(p.title)}</span>
+                    <span class="plan-status plan-status-${p.status}">${p.status}</span>
+                </div>
+            </div>`;
+        }
+    }
+
+    // Status select
+    const statusOptions = ['open','in_progress','done','cancelled'].map(s =>
+        `<option value="${s}"${epic.status===s?' selected':''}>${EPIC_STATUS_LABELS[s]}</option>`
+    ).join('');
+
+    content.innerHTML = `
+    <div style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+            <button class="btn btn-gray btn-sm" onclick="navigate('epics')">\u2190 Back</button>
+            ${colorDot}
+            <h2 style="color:#fff;font-size:18px;margin:0;">${esc(epic.title)}</h2>
+            <span class="epic-status epic-status-${epic.status}">${EPIC_STATUS_LABELS[epic.status] || epic.status}</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <select id="epicStatusSelect" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;" onchange="updateEpicStatus(${epic.id}, this.value)">
+                ${statusOptions}
+            </select>
+            <button class="btn btn-blue btn-sm" onclick="addTaskToEpic(${epic.id})">+ Add Task</button>
+            <button class="btn btn-red btn-sm" onclick="deleteEpic(${epic.id})">Delete</button>
+        </div>
+    </div>
+
+    ${epic.description ? `<div style="background:var(--bg-card);border-radius:10px;padding:16px;border:1px solid var(--border);margin-bottom:16px;"><div class="sp-desc" style="font-size:13px;color:var(--text-secondary);line-height:1.6;">${renderMarkdown(epic.description)}</div></div>` : ''}
+
+    <div style="background:var(--bg-card);border-radius:10px;padding:16px;border:1px solid var(--border);margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span style="font-size:13px;font-weight:600;color:var(--text-primary);">Progress</span>
+            <span style="font-size:12px;color:var(--text-tertiary);">${stats.done}/${stats.total} (${pct}%)</span>
+        </div>
+        <div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${pct}%"></div></div>
+    </div>
+
+    ${plans.length > 0 ? `<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:600;color:var(--text-tertiary);margin-bottom:8px;">Plans (${plans.length})</div>${plansHtml}</div>` : ''}
+
+    <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-tertiary);margin-bottom:8px;">Tasks (${tasks.length})</div>
+        ${tasksHtml}
+    </div>`;
+}
+
+async function updateEpicStatus(epicId, status) {
+    try {
+        await fetch(`/api/epics/${epicId}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status})});
+        showToast('Epic status updated', 'success');
+        loadEpicDetail(epicId);
+    } catch(e) { showToast('Failed to update epic', 'error'); }
+}
+
+async function deleteEpic(epicId) {
+    if(!confirm('Delete this epic? Tasks will be unlinked, not deleted.')) return;
+    try {
+        await fetch(`/api/epics/${epicId}`, {method:'DELETE'});
+        showToast('Epic deleted', 'info');
+        navigate('epics');
+    } catch(e) { showToast('Failed to delete epic', 'error'); }
+}
+
+function addTaskToEpic(epicId) {
+    navigate('tasks');
+    setTimeout(() => {
+        toggleAddForm();
+        document.getElementById('addEpic').value = String(epicId);
+    }, 100);
+}
 
 // ── Plan List ──
 
@@ -2145,11 +2502,18 @@ function renderPlanCreate() {
             <label>Specification</label>
             <textarea id="planSpec" placeholder="Describe what you want to build..."></textarea>
         </div>
+        <div class="plan-form-group">
+            <label>Epic (optional)</label>
+            <select id="planEpic" style="background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text-primary);font-size:13px;width:100%;box-sizing:border-box;">
+                <option value="">No Epic</option>
+            </select>
+        </div>
         <div style="display:flex;gap:8px;">
             <button class="btn btn-blue" onclick="submitPlan()">Create & Decompose</button>
             <button class="btn btn-gray" onclick="navigate('plans')">Cancel</button>
         </div>
     </div>`;
+    loadEpics().then(populateEpicDropdowns);
 }
 
 function addPlanTargetRow() {
@@ -2174,12 +2538,16 @@ async function submitPlan() {
         const path = row.querySelector('.plan-target-path').value.trim();
         if(name && path) targets[name] = {project: path};
     });
+    const planEpicVal = document.getElementById('planEpic') ? document.getElementById('planEpic').value : '';
+    const planEpicId = planEpicVal ? parseInt(planEpicVal) : null;
 
     try {
+        const body = {title, spec, targets};
+        if(planEpicId) body.epic_id = planEpicId;
         const res = await fetch('/api/plans', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({title, spec, targets})
+            body: JSON.stringify(body)
         });
         const plan = await res.json();
         showToast('Plan created', 'success');
@@ -2410,6 +2778,7 @@ async function deletePlan(planId) {
 
 // ── Init ──
 renderSkeletonBoard();
+loadEpics().then(populateEpicDropdowns);
 loadTasks();
 pollStatus();
 setInterval(pollStatus, 3000);

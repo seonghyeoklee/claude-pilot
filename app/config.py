@@ -18,6 +18,7 @@ class AppConfig(BaseModel):
     poll_interval: int = 5
     claude_model: str | None = None
     claude_max_budget: float | None = None
+    claude_timeout_sec: int = 600  # claude process timeout in seconds
     db_path: str = "data/tasks.db"
     # Gitflow
     gitflow: bool = False  # enable branch-per-task + PR workflow

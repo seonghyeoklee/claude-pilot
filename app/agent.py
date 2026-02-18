@@ -510,7 +510,6 @@ class AgentWorker:
         "walkthrough",
         "processing",
         "in progress",
-        "<!-- This is an auto-generated comment",
         "<!-- tips_start",
         "Thank you for using CodeRabbit",
         "📝 Walkthrough",
@@ -584,8 +583,8 @@ class AgentWorker:
                 continue
             if any(pat.lower() in body_lower for pat in self._SKIP_PATTERNS):
                 continue
-            if "actionable" in body_lower or "issue" in body_lower or "suggestion" in body_lower:
-                comments.append(f"[{author} review]: {body}")
+            # Any non-empty review body that passed skip/zero-actionable filters is worth processing
+            comments.append(f"[{author} review]: {body}")
 
         return comments
 

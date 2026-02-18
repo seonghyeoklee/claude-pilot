@@ -234,11 +234,14 @@ class Database:
         await self._db.commit()
         return cursor.rowcount > 0
 
-    async def pick_next_pending(self, min_priority: int = 0) -> Task | None:
-        async with self._db.execute(
-            "SELECT * FROM tasks WHERE status = ? AND priority >= ? AND plan_id IS NULL ORDER BY priority DESC, created_at ASC LIMIT 1",
-            (TaskStatus.PENDING.value, min_priority),
-        ) as cur:
+    async def pick_next_pending(self, min_priority: int = 0, epic_id: int | None = None) -> Task | None:
+        conditions = ["status = ?", "priority >= ?", "plan_id IS NULL"]
+        params: list = [TaskStatus.PENDING.value, min_priority]
+        if epic_id is not None:
+            conditions.append("epic_id = ?")
+            params.append(epic_id)
+        sql = f"SELECT * FROM tasks WHERE {' AND '.join(conditions)} ORDER BY priority DESC, created_at ASC LIMIT 1"
+        async with self._db.execute(sql, tuple(params)) as cur:
             row = await cur.fetchone()
             return self._row_to_task(row) if row else None
 

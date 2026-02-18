@@ -1,4 +1,4 @@
-target_project: /Users/woody/recruit/claude-pilot
+target_project: /Users/woody/recruit/quantum-trading-platform
 claude_command: claude
 auto_approve: true
 poll_interval: 5

@@ -108,12 +108,14 @@ async def agent_status(agent: AgentWorker = Depends(_get_agent)):
 
 class StartRequest(_PydanticBase):
     min_priority: int = 0  # 0=All, 1=Med+, 2=High+, 3=Urgent
+    epic_id: int | None = None  # None=all, N=specific epic
 
 
 @router.post("/api/agent/start")
 async def agent_start(body: StartRequest | None = None, agent: AgentWorker = Depends(_get_agent)):
     pri = body.min_priority if body else 0
-    await agent.start_loop(min_priority=pri)
+    epic = body.epic_id if body else None
+    await agent.start_loop(min_priority=pri, epic_id=epic)
     return {"ok": True}
 
 

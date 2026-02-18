@@ -804,6 +804,9 @@ _BODY = """
                 <div class="stat-chip">Failed: <span id="statFailed" class="negative">0</span></div>
             </div>
             <button class="btn btn-blue btn-sm" onclick="toggleAddForm()">+ Add</button>
+            <select id="epicFilter" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;">
+                <option value="">All Epics</option>
+            </select>
             <select id="minPriority" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;">
                 <option value="0">All</option>
                 <option value="1">Medium+</option>
@@ -1465,9 +1468,25 @@ function fmtTime(iso) {
 
 async function agentStart() {
     const pri = parseInt(document.getElementById('minPriority').value);
-    await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({min_priority:pri})});
-    showToast('Agent started', 'success');
+    const epicVal = document.getElementById('epicFilter').value;
+    const epic = epicVal ? parseInt(epicVal) : null;
+    await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({min_priority:pri, epic_id:epic})});
+    const epicLabel = epicVal ? ` (Epic #${epicVal})` : '';
+    showToast('Agent started' + epicLabel, 'success');
     ensureSSE();
+}
+
+async function loadEpicDropdown() {
+    try {
+        const res = await fetch('/api/epics');
+        const epics = await res.json();
+        const sel = document.getElementById('epicFilter');
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">All Epics</option>' +
+            epics.filter(e => e.status !== 'done' && e.status !== 'cancelled')
+                .map(e => `<option value="${e.id}"${e.id==cur?' selected':''}>${esc(e.title)}</option>`)
+                .join('');
+    } catch(e) {}
 }
 
 async function agentStop() {
@@ -2779,6 +2798,7 @@ async function deletePlan(planId) {
 // ── Init ──
 renderSkeletonBoard();
 loadEpics().then(populateEpicDropdowns);
+loadEpicDropdown();
 loadTasks();
 pollStatus();
 setInterval(pollStatus, 3000);

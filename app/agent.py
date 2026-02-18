@@ -45,6 +45,7 @@ class AgentWorker:
         self._stop_requested = False
         self._proc: asyncio.subprocess.Process | None = None
         self._min_priority: int = 0  # 0=all, 1=Med+, 2=High+, 3=Urgent only
+        self._epic_id: int | None = None  # None=all epics, N=specific epic
         self._exec_lock = asyncio.Lock()  # serialize task execution
 
     # ── Status ──
@@ -89,14 +90,16 @@ class AgentWorker:
 
     # ── Loop Control ──
 
-    async def start_loop(self, min_priority: int = 0) -> None:
+    async def start_loop(self, min_priority: int = 0, epic_id: int | None = None) -> None:
         if self._loop_task and not self._loop_task.done():
             return
         self._stop_requested = False
         self._min_priority = min_priority
+        self._epic_id = epic_id
         self._state = AgentState.IDLE
         pri_label = {0:"All", 1:"Medium+", 2:"High+", 3:"Urgent"}
-        self._add_log(LogLevel.SYSTEM, f"Agent loop started (priority: {pri_label.get(min_priority, min_priority)})")
+        epic_label = f", epic #{epic_id}" if epic_id else ""
+        self._add_log(LogLevel.SYSTEM, f"Agent loop started (priority: {pri_label.get(min_priority, min_priority)}{epic_label})")
         self._loop_task = asyncio.create_task(self._run_loop())
 
     async def stop_loop(self) -> None:
@@ -182,7 +185,7 @@ class AgentWorker:
     async def _run_loop(self) -> None:
         try:
             while not self._stop_requested:
-                task = await self.db.pick_next_pending(min_priority=self._min_priority)
+                task = await self.db.pick_next_pending(min_priority=self._min_priority, epic_id=self._epic_id)
                 if not task:
                     self._state = AgentState.IDLE
                     await asyncio.sleep(self.config.poll_interval)

@@ -793,6 +793,13 @@ _BODY = """
 <div class="container">
     <div class="top-bar">
         <div style="display:flex;align-items:center;gap:12px;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none" width="28" height="28" style="flex-shrink:0">
+                <rect x="1" y="1" width="38" height="38" rx="10" fill="#1a1b23" stroke="#30363d" stroke-width="1"/>
+                <path d="M15 14 L9 20 L15 26" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <path d="M25 14 L31 20 L25 26" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <path d="M20 12 L20 28" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+                <path d="M16 16 L20 12 L24 16" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
             <h1 style="cursor:pointer" onclick="navigate('tasks')">Claude Pilot</h1>
             <span id="statusDot" class="status-dot stopped"></span>
             <span id="statusLabel" style="color:#888;font-size:13px;">Stopped</span>
@@ -844,6 +851,9 @@ _BODY = """
         </div>
         <div class="form-row">
             <input id="addLabels" placeholder="Labels (comma-separated)..." style="flex:1;min-width:150px;">
+        </div>
+        <div class="form-row">
+            <input id="addTarget" placeholder="Target project path (default: config)" style="flex:1;min-width:200px;">
         </div>
         <div class="form-row">
             <select id="addPriority" style="background:#252830;border:1px solid #374151;border-radius:8px;padding:6px 10px;color:#e0e0e0;font-size:12px;">
@@ -1061,6 +1071,13 @@ function renderCard(t, stagger, changed) {
         epicBadgeHtml = `<span class="epic-badge"><span class="epic-badge-dot" style="background:${ec.color || '#6b7280'}"></span>${esc(ec.title)}</span>`;
     }
 
+    // Target badge (show directory name if target is set)
+    let targetBadgeHtml = '';
+    if(t.target) {
+        const dirName = t.target.split('/').filter(Boolean).pop() || t.target;
+        targetBadgeHtml = `<span class="target-badge" style="font-size:9px;" title="${esc(t.target)}">${esc(dirName)}</span>`;
+    }
+
     // Time display: elapsed for running/done, relative for others
     let timeHtml = '';
     if(elapsed) {
@@ -1084,6 +1101,7 @@ function renderCard(t, stagger, changed) {
                 <span class="k-card-id">#${t.id}</span>
                 ${t.status === 'in_progress' ? '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' : ''}
                 ${epicBadgeHtml}
+                ${targetBadgeHtml}
                 ${labelPills}
             </div>
             <div class="k-card-tier3">
@@ -1223,13 +1241,16 @@ async function addTask() {
     const labels = labelsRaw ? labelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const epicVal = document.getElementById('addEpic').value;
     const epicId = epicVal ? parseInt(epicVal) : null;
+    const target = document.getElementById('addTarget').value.trim();
     const body = {title, description:desc, priority:pri, labels};
     if(epicId) body.epic_id = epicId;
+    if(target) body.target = target;
     await fetch('/api/tasks', {method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify(body)});
     document.getElementById('addTitle').value = '';
     document.getElementById('addDesc').value = '';
     document.getElementById('addLabels').value = '';
+    document.getElementById('addTarget').value = '';
     document.getElementById('addEpic').value = '';
     document.getElementById('addForm').classList.remove('visible');
     showToast('Task created', 'success');
@@ -1351,6 +1372,8 @@ function renderSlideLeft(t) {
         detailsContent += `<div class="sp-meta-item"><div class="label">Exit Code</div><div class="value">${t.exit_code}</div></div>`;
     if(t.cost_usd)
         detailsContent += `<div class="sp-meta-item"><div class="label">Cost</div><div class="value">$${t.cost_usd.toFixed(4)}</div></div>`;
+    if(t.target)
+        detailsContent += `<div class="sp-meta-item"><div class="label">Target</div><div class="value" style="font-size:11px;font-family:monospace">${esc(t.target)}</div></div>`;
     if(t.branch_name)
         detailsContent += `<div class="sp-meta-item"><div class="label">Branch</div><div class="value" style="font-size:11px;font-family:monospace">${esc(t.branch_name)}</div></div>`;
     if(t.pr_url)

@@ -75,6 +75,7 @@ class TaskCreate(BaseModel):
     priority: TaskPriority = TaskPriority.MEDIUM
     labels: list[str] = Field(default_factory=list)
     epic_id: int | None = None
+    target: str = ""  # 프로젝트 경로 (빈 문자열 = config 기본값)
 
 
 class TaskUpdate(BaseModel):
@@ -84,6 +85,7 @@ class TaskUpdate(BaseModel):
     status: TaskStatus | None = None
     labels: list[str] | None = None
     epic_id: int | None = None  # 0 = remove from epic
+    target: str | None = None
 
 
 class Plan(BaseModel):

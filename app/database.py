@@ -137,8 +137,8 @@ class Database:
     async def create_task(self, data: TaskCreate) -> Task:
         now = _now_iso()
         cursor = await self._db.execute(
-            "INSERT INTO tasks (title, description, priority, status, labels, epic_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (data.title, data.description, data.priority.value, TaskStatus.PENDING.value, json.dumps(data.labels), data.epic_id, now, now),
+            "INSERT INTO tasks (title, description, priority, status, labels, epic_id, target, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (data.title, data.description, data.priority.value, TaskStatus.PENDING.value, json.dumps(data.labels), data.epic_id, data.target, now, now),
         )
         await self._db.commit()
         return await self.get_task(cursor.lastrowid)
@@ -218,6 +218,9 @@ class Database:
         if data.epic_id is not None:
             updates.append("epic_id = ?")
             values.append(None if data.epic_id == 0 else data.epic_id)
+        if data.target is not None:
+            updates.append("target = ?")
+            values.append(data.target)
         if not updates:
             return task
         updates.append("updated_at = ?")

@@ -1,10 +1,10 @@
 target_project: /Users/woody/recruit/quantum-trading-platform
-claude_command: claude
+claude_command: /Users/woody/.local/bin/claude
 auto_approve: true
 poll_interval: 5
 claude_model: null
 claude_max_budget: null
-claude_timeout_sec: 300
+claude_timeout_sec: 1800
 # Gitflow: branch per task + PR
 gitflow: true
 branch_prefix: feat

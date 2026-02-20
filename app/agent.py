@@ -153,8 +153,9 @@ class AgentWorker:
             return False
         if task.status not in (TaskStatus.PENDING, TaskStatus.FAILED):
             return False
+        cwd = task.target or None
         async with self._exec_lock:
-            await self._execute_task(task_id, task.title, task.description)
+            await self._execute_task(task_id, task.title, task.description, cwd_override=cwd)
         return True
 
     async def schedule_task(self, task_id: int) -> bool:
@@ -166,13 +167,14 @@ class AgentWorker:
             return False
         if task.status not in (TaskStatus.PENDING, TaskStatus.FAILED):
             return False
-        bg = asyncio.create_task(self._run_task_with_lock(task_id, task.title, task.description))
+        cwd = task.target or None
+        bg = asyncio.create_task(self._run_task_with_lock(task_id, task.title, task.description, cwd_override=cwd))
         bg.add_done_callback(self._on_bg_task_done)
         return True
 
-    async def _run_task_with_lock(self, task_id: int, title: str, description: str) -> None:
+    async def _run_task_with_lock(self, task_id: int, title: str, description: str, *, cwd_override: str | None = None) -> None:
         async with self._exec_lock:
-            await self._execute_task(task_id, title, description)
+            await self._execute_task(task_id, title, description, cwd_override=cwd_override)
 
     def _on_bg_task_done(self, task: asyncio.Task) -> None:
         if task.cancelled():
@@ -191,8 +193,9 @@ class AgentWorker:
                     self._state = AgentState.IDLE
                     await asyncio.sleep(self.config.poll_interval)
                     continue
+                cwd = task.target or None
                 async with self._exec_lock:
-                    await self._execute_task(task.id, task.title, task.description)
+                    await self._execute_task(task.id, task.title, task.description, cwd_override=cwd)
                 if self._stop_requested:
                     break
         except asyncio.CancelledError:
@@ -951,7 +954,12 @@ class AgentWorker:
             cmd.extend(["--max-budget-usd", str(self.config.claude_max_budget)])
         cmd.append("--dangerously-skip-permissions")
 
+        # Resolve cwd: if relative or non-existent, fall back to target_project
         run_cwd = cwd or self.config.target_project
+        if run_cwd and not Path(run_cwd).is_absolute():
+            run_cwd = self.config.target_project
+        if run_cwd and not Path(run_cwd).is_dir():
+            run_cwd = self.config.target_project
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
 
@@ -968,9 +976,9 @@ class AgentWorker:
                 env=env,
                 limit=4 * 1024 * 1024,  # 4MB line buffer (default 64KB too small for large stream-json)
             )
-        except FileNotFoundError:
-            self._add_log(LogLevel.ERROR, f"claude command not found: {self.config.claude_command}", task_id)
-            return 1, "claude command not found", None
+        except FileNotFoundError as e:
+            self._add_log(LogLevel.ERROR, f"FileNotFoundError: {e} (cmd={self.config.claude_command}, cwd={run_cwd})", task_id)
+            return 1, f"FileNotFoundError: {e}", None
 
         self._proc = proc
         # Feed prompt via stdin and close

@@ -60,6 +60,7 @@ def wrap_html(
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none'%3E%3Crect x='1' y='1' width='38' height='38' rx='10' fill='%231a1b23' stroke='%2330363d' stroke-width='1'/%3E%3Cpath d='M15 14 L9 20 L15 26' stroke='%2358a6ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Cpath d='M25 14 L31 20 L25 26' stroke='%2358a6ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Cpath d='M20 12 L20 28' stroke='%23a78bfa' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M16 16 L20 12 L24 16' stroke='%23a78bfa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
 {chartjs_tag}
 <style>
 {DARK_THEME_CSS}

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <!-- Background rounded square -->
+  <rect x="1" y="1" width="38" height="38" rx="10" fill="#1a1b23" stroke="#58a6ff" stroke-width="1.2"/>
+  <!-- Stylized compass / autopilot needle -->
+  <path d="M20 6 L26 20 L20 34 L14 20 Z" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Top half filled (north arrow) -->
+  <path d="M20 6 L26 20 L20 17 L14 20 Z" fill="#58a6ff"/>
+  <!-- Center dot -->
+  <circle cx="20" cy="20" r="2.5" fill="#a78bfa"/>
+</svg>

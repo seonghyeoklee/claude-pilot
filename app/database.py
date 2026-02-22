@@ -8,6 +8,7 @@ from pathlib import Path
 import aiosqlite
 
 from app.models import (
+    DailySnapshot,
     Epic,
     EpicCreate,
     EpicStatus,
@@ -81,6 +82,29 @@ CREATE TABLE IF NOT EXISTS epics (
 )
 """
 
+_CREATE_SNAPSHOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS daily_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL UNIQUE,
+    net_asset REAL DEFAULT 0,
+    daily_pnl REAL DEFAULT 0,
+    daily_return_pct REAL DEFAULT 0,
+    total_signals INTEGER DEFAULT 0,
+    total_orders INTEGER DEFAULT 0,
+    buy_count INTEGER DEFAULT 0,
+    sell_count INTEGER DEFAULT 0,
+    win_count INTEGER DEFAULT 0,
+    loss_count INTEGER DEFAULT 0,
+    win_rate REAL DEFAULT 0,
+    best_trade_pnl REAL DEFAULT 0,
+    worst_trade_pnl REAL DEFAULT 0,
+    symbols_traded TEXT DEFAULT '[]',
+    analysis_summary TEXT DEFAULT '',
+    raw_metrics TEXT DEFAULT '{}',
+    created_at TEXT
+)
+"""
+
 
 class Database:
     def __init__(self, db_path: str = "data/tasks.db") -> None:
@@ -95,6 +119,7 @@ class Database:
         await self._db.execute(_CREATE_LOGS_TABLE)
         await self._db.execute(_CREATE_PLANS_TABLE)
         await self._db.execute(_CREATE_EPICS_TABLE)
+        await self._db.execute(_CREATE_SNAPSHOTS_TABLE)
         await self._db.commit()
         # Migrate: add labels column if missing
         async with self._db.execute("PRAGMA table_info(tasks)") as cur:
@@ -549,6 +574,61 @@ class Database:
         total = sum(stats.values())
         done = stats.get(TaskStatus.DONE.value, 0)
         return {"by_status": stats, "total": total, "done": done}
+
+    # ── Daily Snapshots ──
+
+    def _row_to_snapshot(self, row: aiosqlite.Row) -> DailySnapshot:
+        d = dict(row)
+        d["symbols_traded"] = json.loads(d.get("symbols_traded") or "[]")
+        d["raw_metrics"] = json.loads(d.get("raw_metrics") or "{}")
+        return DailySnapshot(**d)
+
+    async def upsert_snapshot(self, date: str, data: dict) -> DailySnapshot:
+        now = _now_iso()
+        await self._db.execute(
+            "INSERT OR REPLACE INTO daily_snapshots "
+            "(date, net_asset, daily_pnl, daily_return_pct, "
+            "total_signals, total_orders, buy_count, sell_count, "
+            "win_count, loss_count, win_rate, "
+            "best_trade_pnl, worst_trade_pnl, "
+            "symbols_traded, analysis_summary, raw_metrics, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                date,
+                data.get("net_asset", 0),
+                data.get("daily_pnl", 0),
+                data.get("daily_return_pct", 0),
+                data.get("total_signals", 0),
+                data.get("total_orders", 0),
+                data.get("buy_count", 0),
+                data.get("sell_count", 0),
+                data.get("win_count", 0),
+                data.get("loss_count", 0),
+                data.get("win_rate", 0),
+                data.get("best_trade_pnl", 0),
+                data.get("worst_trade_pnl", 0),
+                json.dumps(data.get("symbols_traded", [])),
+                data.get("analysis_summary", ""),
+                json.dumps(data.get("raw_metrics", {})),
+                now,
+            ),
+        )
+        await self._db.commit()
+        return await self.get_snapshot(date)
+
+    async def get_snapshot(self, date: str) -> DailySnapshot | None:
+        async with self._db.execute(
+            "SELECT * FROM daily_snapshots WHERE date = ?", (date,)
+        ) as cur:
+            row = await cur.fetchone()
+            return self._row_to_snapshot(row) if row else None
+
+    async def list_snapshots(self, limit: int = 30) -> list[DailySnapshot]:
+        async with self._db.execute(
+            "SELECT * FROM daily_snapshots ORDER BY date DESC LIMIT ?", (limit,)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_snapshot(r) for r in rows]
 
     # ── Logs ──
 

@@ -40,6 +40,28 @@ footer { text-align: center; padding: 32px; color: var(--text-tertiary); font-si
 /* Focus-visible: keyboard only, not mouse */
 *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 *:focus:not(:focus-visible) { outline: none; }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+    .container { padding: 12px; }
+    header { padding: 24px 0 16px; }
+    header h1 { font-size: 22px; }
+    .section { padding: 16px; margin: 12px 0; border-radius: 8px; }
+    .section h2 { font-size: 16px; margin-bottom: 12px; }
+    .summary-card { padding: 14px; border-radius: 8px; }
+    .summary-card h3 { font-size: 12px; }
+    table { font-size: 12px; }
+    th, td { padding: 8px 6px; }
+    footer { padding: 20px; font-size: 11px; }
+    /* Horizontal scroll for wide tables */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+@media (max-width: 480px) {
+    .container { padding: 8px; }
+    header h1 { font-size: 19px; }
+    .section { padding: 12px; }
+    th, td { padding: 6px 4px; white-space: nowrap; }
+}
 """.strip()
 
 

@@ -385,8 +385,8 @@ async def analyze_daily(
 
     journal_data = resp.json()
 
-    # Check for empty trades
-    trades = journal_data.get("trades", journal_data.get("entries", []))
+    # Check for empty trades (key varies: trades, entries, events)
+    trades = journal_data.get("trades") or journal_data.get("entries") or journal_data.get("events") or []
     trade_count = len(trades) if isinstance(trades, list) else 0
     if trade_count == 0:
         return {
@@ -409,26 +409,71 @@ async def analyze_daily(
         raise HTTPException(500, f"Claude analysis failed (exit={exit_code})")
 
     # 3. Parse JSON from Claude output
-    parsed = agent._parse_json_from_output(output)
-    if parsed is None:
-        # Try parsing as a single object (not array)
-        import json
-        try:
-            parsed = json.loads(output.strip())
-        except (json.JSONDecodeError, ValueError):
-            pass
+    import json as _json
+    import re as _re
 
-    if parsed is None:
+    analysis: dict | None = None
+
+    # Try direct JSON parse
+    try:
+        candidate = _json.loads(output.strip())
+        if isinstance(candidate, dict):
+            analysis = candidate
+        elif isinstance(candidate, list) and candidate and isinstance(candidate[0], dict):
+            analysis = candidate[0]
+    except (ValueError, _json.JSONDecodeError):
+        pass
+
+    # Try extracting from markdown code fence
+    if analysis is None:
+        fence_match = _re.search(r'```(?:json)?\s*\n([\s\S]*?)\n```', output)
+        if fence_match:
+            try:
+                candidate = _json.loads(fence_match.group(1).strip())
+                if isinstance(candidate, dict):
+                    analysis = candidate
+            except (ValueError, _json.JSONDecodeError):
+                pass
+
+    # Try finding first { ... } balanced JSON object
+    if analysis is None:
+        start = output.find('{')
+        while start != -1:
+            depth = 0
+            in_string = False
+            escape = False
+            for i in range(start, len(output)):
+                c = output[i]
+                if escape:
+                    escape = False
+                    continue
+                if c == '\\' and in_string:
+                    escape = True
+                    continue
+                if c == '"' and not escape:
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            candidate = _json.loads(output[start:i + 1])
+                            if isinstance(candidate, dict) and ("tasks" in candidate or "summary" in candidate):
+                                analysis = candidate
+                        except (ValueError, _json.JSONDecodeError):
+                            pass
+                        break
+            if analysis is not None:
+                break
+            start = output.find('{', start + 1)
+
+    if analysis is None:
+        logger.error("Failed to parse analysis JSON. Output (first 2000 chars): %s", output[:2000])
         raise HTTPException(500, "Failed to parse analysis output from Claude")
-
-    # Handle both formats: direct dict or list wrapping a dict
-    analysis: dict = {}
-    if isinstance(parsed, dict):
-        analysis = parsed
-    elif isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
-        analysis = parsed[0]
-    else:
-        raise HTTPException(500, "Unexpected analysis output format")
 
     summary = _extract_summary(analysis)
     task_items = analysis.get("tasks", [])

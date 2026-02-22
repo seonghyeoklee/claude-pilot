@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from datetime import date
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel as _PydanticBase
 from sse_starlette.sse import EventSourceResponse
@@ -19,9 +22,12 @@ from app.models import (
     PlanStatus,
     PlanUpdate,
     TaskCreate,
+    TaskPriority,
     TaskStatus,
     TaskUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -296,3 +302,163 @@ async def delete_epic(epic_id: int, db: Database = Depends(_get_db)):
     if not ok:
         raise HTTPException(404, "Epic not found")
     return {"ok": True}
+
+
+# ── Daily Trading Analysis ──
+
+
+class AnalyzeDailyRequest(_PydanticBase):
+    date: str | None = None  # YYYY-MM-DD, defaults to today
+    trading_api_url: str = "http://localhost:8000"
+    epic_id: int | None = None  # attach created tasks to this epic
+
+
+def _build_analysis_prompt(journal_data: dict) -> str:
+    """Build a Claude prompt for trading analysis with task generation."""
+    import json
+
+    journal_json = json.dumps(journal_data, ensure_ascii=False, indent=2)
+    return (
+        "You are a quantitative trading analyst. Analyze the following daily trading journal data "
+        "and generate actionable improvement tasks for the trading system.\n\n"
+        "## Trading Journal Data\n"
+        f"```json\n{journal_json}\n```\n\n"
+        "## Instructions\n"
+        "1. Analyze the trading performance: win rate, P&L, risk management, strategy effectiveness\n"
+        "2. Identify specific areas for improvement in the trading algorithms\n"
+        "3. Generate concrete, actionable improvement tasks\n\n"
+        "## Output Format\n"
+        "Respond with ONLY a JSON object (no other text):\n"
+        "```json\n"
+        "{\n"
+        '  "summary": "Brief overall analysis summary (2-3 sentences)",\n'
+        '  "tasks": [\n'
+        "    {\n"
+        '      "title": "Concise task title",\n'
+        '      "description": "Detailed description of what to implement or fix",\n'
+        '      "priority": 0-3\n'
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "```\n\n"
+        "Priority levels: 0=Low, 1=Medium, 2=High, 3=Urgent\n"
+        "Generate between 1-5 tasks based on the analysis."
+    )
+
+
+def _extract_summary(parsed: dict) -> str:
+    """Extract summary text from parsed Claude analysis output."""
+    if isinstance(parsed, dict):
+        return parsed.get("summary", "")
+    return ""
+
+
+@router.post("/api/analyze-daily")
+async def analyze_daily(
+    body: AnalyzeDailyRequest | None = None,
+    db: Database = Depends(_get_db),
+    agent: AgentWorker = Depends(_get_agent),
+):
+    req = body or AnalyzeDailyRequest()
+    target_date = req.date or date.today().isoformat()
+    trading_url = req.trading_api_url.rstrip("/")
+
+    # 1. Fetch trading journal from quantum-trading-platform
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{trading_url}/trading/journal/{target_date}")
+    except httpx.ConnectError:
+        raise HTTPException(502, f"Cannot connect to trading platform at {trading_url}")
+    except httpx.RequestError as exc:
+        raise HTTPException(502, f"Trading platform request failed: {exc}")
+
+    if resp.status_code == 404:
+        return {
+            "date": target_date,
+            "trade_count": 0,
+            "analysis_summary": "No trading data found for this date.",
+            "tasks_created": [],
+            "cost_usd": None,
+        }
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Trading platform returned {resp.status_code}")
+
+    journal_data = resp.json()
+
+    # Check for empty trades
+    trades = journal_data.get("trades", journal_data.get("entries", []))
+    trade_count = len(trades) if isinstance(trades, list) else 0
+    if trade_count == 0:
+        return {
+            "date": target_date,
+            "trade_count": 0,
+            "analysis_summary": "No trades recorded for this date.",
+            "tasks_created": [],
+            "cost_usd": None,
+        }
+
+    # 2. Run Claude analysis
+    prompt = _build_analysis_prompt(journal_data)
+    try:
+        exit_code, output, cost = await agent._run_claude(prompt, 0)
+    except Exception as exc:
+        logger.exception("Claude analysis failed for %s", target_date)
+        raise HTTPException(500, f"Claude analysis failed: {exc}")
+
+    if exit_code != 0:
+        raise HTTPException(500, f"Claude analysis failed (exit={exit_code})")
+
+    # 3. Parse JSON from Claude output
+    parsed = agent._parse_json_from_output(output)
+    if parsed is None:
+        # Try parsing as a single object (not array)
+        import json
+        try:
+            parsed = json.loads(output.strip())
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    if parsed is None:
+        raise HTTPException(500, "Failed to parse analysis output from Claude")
+
+    # Handle both formats: direct dict or list wrapping a dict
+    analysis: dict = {}
+    if isinstance(parsed, dict):
+        analysis = parsed
+    elif isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+        analysis = parsed[0]
+    else:
+        raise HTTPException(500, "Unexpected analysis output format")
+
+    summary = _extract_summary(analysis)
+    task_items = analysis.get("tasks", [])
+
+    # 4. Create tasks in DB
+    created_tasks = []
+    for item in task_items:
+        title = item.get("title", "")
+        if not title:
+            continue
+        description = item.get("description", "")
+        raw_priority = item.get("priority", 1)
+        try:
+            priority = TaskPriority(raw_priority)
+        except ValueError:
+            priority = TaskPriority.MEDIUM
+
+        task = await db.create_task(TaskCreate(
+            title=f"[Trading] {title}",
+            description=f"[Auto-generated from {target_date} trading analysis]\n\n{description}",
+            priority=priority,
+            labels=["trading-analysis"],
+            epic_id=req.epic_id,
+        ))
+        created_tasks.append({"id": task.id, "title": task.title, "priority": priority.value})
+
+    return {
+        "date": target_date,
+        "trade_count": trade_count,
+        "analysis_summary": summary,
+        "tasks_created": created_tasks,
+        "cost_usd": cost,
+    }

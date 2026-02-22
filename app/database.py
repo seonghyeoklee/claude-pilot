@@ -25,6 +25,7 @@ from app.models import (
     TaskUpdate,
     _now_iso,
 )
+from app.reports.models import ReportSnapshot, ReportType
 
 _CREATE_LOGS_TABLE = """
 CREATE TABLE IF NOT EXISTS logs (
@@ -105,6 +106,34 @@ CREATE TABLE IF NOT EXISTS daily_snapshots (
 )
 """
 
+_CREATE_REPORT_SNAPSHOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS report_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_type TEXT NOT NULL,
+    period_key TEXT NOT NULL,
+    net_asset REAL DEFAULT 0,
+    daily_pnl REAL DEFAULT 0,
+    daily_return_pct REAL DEFAULT 0,
+    total_signals INTEGER DEFAULT 0,
+    total_orders INTEGER DEFAULT 0,
+    buy_count INTEGER DEFAULT 0,
+    sell_count INTEGER DEFAULT 0,
+    win_count INTEGER DEFAULT 0,
+    loss_count INTEGER DEFAULT 0,
+    win_rate REAL DEFAULT 0,
+    best_trade_pnl REAL DEFAULT 0,
+    worst_trade_pnl REAL DEFAULT 0,
+    symbols_traded TEXT DEFAULT '[]',
+    analysis_summary TEXT DEFAULT '',
+    raw_metrics TEXT DEFAULT '{}',
+    period_start TEXT DEFAULT '',
+    period_end TEXT DEFAULT '',
+    trading_days INTEGER DEFAULT 0,
+    created_at TEXT,
+    UNIQUE(report_type, period_key)
+)
+"""
+
 
 class Database:
     def __init__(self, db_path: str = "data/tasks.db") -> None:
@@ -120,6 +149,10 @@ class Database:
         await self._db.execute(_CREATE_PLANS_TABLE)
         await self._db.execute(_CREATE_EPICS_TABLE)
         await self._db.execute(_CREATE_SNAPSHOTS_TABLE)
+        await self._db.execute(_CREATE_REPORT_SNAPSHOTS_TABLE)
+        await self._db.commit()
+        # Migrate daily_snapshots → report_snapshots
+        await self._migrate_daily_to_report_snapshots()
         await self._db.commit()
         # Migrate: add labels column if missing
         async with self._db.execute("PRAGMA table_info(tasks)") as cur:
@@ -629,6 +662,107 @@ class Database:
         ) as cur:
             rows = await cur.fetchall()
             return [self._row_to_snapshot(r) for r in rows]
+
+    # ── Report Snapshots ──
+
+    async def _migrate_daily_to_report_snapshots(self) -> None:
+        """Migrate existing daily_snapshots into report_snapshots (INSERT OR IGNORE)."""
+        await self._db.execute(
+            "INSERT OR IGNORE INTO report_snapshots "
+            "(report_type, period_key, net_asset, daily_pnl, daily_return_pct, "
+            "total_signals, total_orders, buy_count, sell_count, "
+            "win_count, loss_count, win_rate, best_trade_pnl, worst_trade_pnl, "
+            "symbols_traded, analysis_summary, raw_metrics, "
+            "period_start, period_end, trading_days, created_at) "
+            "SELECT 'daily', date, net_asset, daily_pnl, daily_return_pct, "
+            "total_signals, total_orders, buy_count, sell_count, "
+            "win_count, loss_count, win_rate, best_trade_pnl, worst_trade_pnl, "
+            "symbols_traded, analysis_summary, raw_metrics, "
+            "date, date, 1, created_at "
+            "FROM daily_snapshots"
+        )
+
+    def _row_to_report(self, row: aiosqlite.Row) -> ReportSnapshot:
+        d = dict(row)
+        d["symbols_traded"] = json.loads(d.get("symbols_traded") or "[]")
+        d["raw_metrics"] = json.loads(d.get("raw_metrics") or "{}")
+        d["report_type"] = ReportType(d["report_type"])
+        return ReportSnapshot(**d)
+
+    async def upsert_report(
+        self,
+        report_type: ReportType,
+        period_key: str,
+        data: dict,
+        *,
+        period_start: str = "",
+        period_end: str = "",
+        trading_days: int = 0,
+    ) -> ReportSnapshot:
+        now = _now_iso()
+        await self._db.execute(
+            "INSERT OR REPLACE INTO report_snapshots "
+            "(report_type, period_key, net_asset, daily_pnl, daily_return_pct, "
+            "total_signals, total_orders, buy_count, sell_count, "
+            "win_count, loss_count, win_rate, "
+            "best_trade_pnl, worst_trade_pnl, "
+            "symbols_traded, analysis_summary, raw_metrics, "
+            "period_start, period_end, trading_days, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                report_type.value,
+                period_key,
+                data.get("net_asset", 0),
+                data.get("daily_pnl", 0),
+                data.get("daily_return_pct", 0),
+                data.get("total_signals", 0),
+                data.get("total_orders", 0),
+                data.get("buy_count", 0),
+                data.get("sell_count", 0),
+                data.get("win_count", 0),
+                data.get("loss_count", 0),
+                data.get("win_rate", 0),
+                data.get("best_trade_pnl", 0),
+                data.get("worst_trade_pnl", 0),
+                json.dumps(data.get("symbols_traded", [])),
+                data.get("analysis_summary", ""),
+                json.dumps(data.get("raw_metrics", {})),
+                period_start,
+                period_end,
+                trading_days,
+                now,
+            ),
+        )
+        await self._db.commit()
+        return await self.get_report(report_type, period_key)
+
+    async def get_report(self, report_type: ReportType, period_key: str) -> ReportSnapshot | None:
+        async with self._db.execute(
+            "SELECT * FROM report_snapshots WHERE report_type = ? AND period_key = ?",
+            (report_type.value, period_key),
+        ) as cur:
+            row = await cur.fetchone()
+            return self._row_to_report(row) if row else None
+
+    async def list_reports(self, report_type: ReportType | None = None, limit: int = 30) -> list[ReportSnapshot]:
+        if report_type:
+            sql = "SELECT * FROM report_snapshots WHERE report_type = ? ORDER BY period_key DESC LIMIT ?"
+            params: tuple = (report_type.value, limit)
+        else:
+            sql = "SELECT * FROM report_snapshots ORDER BY period_key DESC LIMIT ?"
+            params = (limit,)
+        async with self._db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_report(r) for r in rows]
+
+    async def get_daily_range(self, start_date: str, end_date: str) -> list[ReportSnapshot]:
+        """Get daily report snapshots in a date range (inclusive), ordered by period_key ASC."""
+        async with self._db.execute(
+            "SELECT * FROM report_snapshots WHERE report_type = ? AND period_key >= ? AND period_key <= ? ORDER BY period_key ASC",
+            (ReportType.DAILY.value, start_date, end_date),
+        ) as cur:
+            rows = await cur.fetchall()
+            return [self._row_to_report(r) for r in rows]
 
     # ── Logs ──
 

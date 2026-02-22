@@ -48,8 +48,10 @@ async def health():
 
 # API routes
 from app.api.routes import router  # noqa: E402
+from app.reports import report_router  # noqa: E402
 
 app.include_router(router)
+app.include_router(report_router)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 {
-  "name": "Daily Trading Analysis",
+  "name": "Trading Analysis & Reports",
   "nodes": [
     {
       "parameters": {
@@ -21,7 +21,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:9000/api/report-daily",
+        "url": "http://host.docker.internal:9000/api/reports/generate",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -33,12 +33,12 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"date\": \"{{ $now.format('yyyy-MM-dd') }}\"\n}",
+        "jsonBody": "={\n  \"type\": \"daily\",\n  \"date\": \"{{ $now.format('yyyy-MM-dd') }}\"\n}",
         "options": {
           "timeout": 60000
         }
       },
-      "id": "http-report",
+      "id": "http-report-daily",
       "name": "일일 리포트 생성",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -138,6 +138,137 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [1200, 420]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 16,
+              "triggerAtMinute": 10
+            }
+          ]
+        }
+      },
+      "id": "cron-market",
+      "name": "매일 16:10 마켓 트리거",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 540]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:9000/api/reports/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"market\",\n  \"date\": \"{{ $now.format('yyyy-MM-dd') }}\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "http-report-market",
+      "name": "마켓 리포트 생성",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 540]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtDay": 5,
+              "triggerAtHour": 16,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "매주 금요일 16:30 트리거",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:9000/api/reports/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"weekly\",\n  \"date\": \"{{ $now.format('yyyy-MM-dd') }}\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "http-report-weekly",
+      "name": "주간 리포트 생성",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 700]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtDay": -1,
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "cron-monthly",
+      "name": "매월 마지막 영업일 17:00 트리거",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 860]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:9000/api/reports/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"monthly\",\n  \"date\": \"{{ $now.format('yyyy-MM-dd') }}\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "http-report-monthly",
+      "name": "월간 리포트 생성",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 860]
     }
   ],
   "connections": {
@@ -186,6 +317,39 @@
         [
           {
             "node": "태스크 없음 메시지",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "매일 16:10 마켓 트리거": {
+      "main": [
+        [
+          {
+            "node": "마켓 리포트 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "매주 금요일 16:30 트리거": {
+      "main": [
+        [
+          {
+            "node": "주간 리포트 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "매월 마지막 영업일 17:00 트리거": {
+      "main": [
+        [
+          {
+            "node": "월간 리포트 생성",
             "type": "main",
             "index": 0
           }

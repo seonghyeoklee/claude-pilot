@@ -9,12 +9,34 @@ from datetime import date, datetime, timedelta
 from app.reports.models import ReportSnapshot
 
 
+def _extract_time(ts_str: str) -> str:
+    """Extract HH:MM from ISO timestamp string."""
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return dt.strftime("%H:%M")
+    except (ValueError, TypeError):
+        return ""
+
+
+def _calc_hold_minutes(buy_ts: str, sell_ts: str) -> int:
+    """Calculate hold duration in minutes between two ISO timestamps."""
+    try:
+        buy_dt = datetime.fromisoformat(buy_ts.replace("Z", "+00:00"))
+        sell_dt = datetime.fromisoformat(sell_ts.replace("Z", "+00:00"))
+        return max(0, int((sell_dt - buy_dt).total_seconds() / 60))
+    except (ValueError, TypeError):
+        return 0
+
+
 def calculate_daily_metrics(events: list[dict], positions: dict) -> dict:
     """Calculate trading metrics from journal events and positions.
 
     Supports two trade matching strategies:
     1. force_close events — already contain entry_price (direct P&L)
     2. FIFO matching — buy order + sell order pairs
+
+    Each trade includes: symbol, pnl, buy_price, sell_price, quantity,
+    buy_time, sell_time, hold_minutes, reason, return_pct.
     """
     signals = [e for e in events if e.get("event_type") == "signal"]
     orders = [e for e in events if e.get("event_type") == "order" and e.get("success")]
@@ -25,23 +47,12 @@ def calculate_daily_metrics(events: list[dict], positions: dict) -> dict:
 
     trades: list[dict] = []
 
-    # 1) force_close events: entry_price already provided
-    for fc in force_closes:
-        sym = fc.get("symbol", "unknown")
-        sell_price = float(fc.get("current_price", 0))
-        buy_price = float(fc.get("entry_price", 0))
-        qty = float(fc.get("quantity", 0))
-        pnl = (sell_price - buy_price) * qty
-        trades.append({"symbol": sym, "pnl": pnl, "buy_price": buy_price, "sell_price": sell_price, "quantity": qty})
-
-    # 2) FIFO matching for regular order sell events
+    # Build buy queue (sorted by timestamp, FIFO)
     buy_queue: dict[str, list[dict]] = defaultdict(list)
-    # Exclude symbols already handled by force_close
-    fc_symbols_ts = {(fc.get("symbol"), fc.get("timestamp")) for fc in force_closes}
     for b in sorted(buys, key=lambda x: x.get("timestamp", "")):
-        sym = b.get("symbol", "unknown")
-        buy_queue[sym].append(b)
+        buy_queue[b.get("symbol", "unknown")].append(b)
 
+    # 1) FIFO matching for regular sells FIRST (they consume earliest buys)
     for s in sorted(sells, key=lambda x: x.get("timestamp", "")):
         sym = s.get("symbol", "unknown")
         if not buy_queue[sym]:
@@ -51,10 +62,48 @@ def calculate_daily_metrics(events: list[dict], positions: dict) -> dict:
         sell_price = float(s.get("current_price", s.get("price", 0)))
         qty = min(float(b.get("quantity", 0)), float(s.get("quantity", 0)))
         pnl = (sell_price - buy_price) * qty
-        trades.append({"symbol": sym, "pnl": pnl, "buy_price": buy_price, "sell_price": sell_price, "quantity": qty})
+        return_pct = ((sell_price - buy_price) / buy_price * 100) if buy_price else 0.0
+
+        buy_ts = b.get("timestamp", "")
+        sell_ts = s.get("timestamp", "")
+
+        trades.append({
+            "symbol": sym, "pnl": pnl,
+            "buy_price": buy_price, "sell_price": sell_price, "quantity": qty,
+            "buy_time": _extract_time(buy_ts), "sell_time": _extract_time(sell_ts),
+            "hold_minutes": _calc_hold_minutes(buy_ts, sell_ts),
+            "reason": "signal", "return_pct": round(return_pct, 2),
+        })
+
+    # 2) force_close events: use entry_price for P&L, remaining buys for timestamp
+    for fc in force_closes:
+        sym = fc.get("symbol", "unknown")
+        sell_price = float(fc.get("current_price", 0))
+        buy_price = float(fc.get("entry_price", 0))
+        qty = float(fc.get("quantity", 0))
+        pnl = (sell_price - buy_price) * qty
+        return_pct = ((sell_price - buy_price) / buy_price * 100) if buy_price else 0.0
+
+        sell_ts = fc.get("timestamp", "")
+        buy_ts = ""
+        if buy_queue[sym]:
+            matched_buy = buy_queue[sym].pop(0)
+            buy_ts = matched_buy.get("timestamp", "")
+
+        trades.append({
+            "symbol": sym, "pnl": pnl,
+            "buy_price": buy_price, "sell_price": sell_price, "quantity": qty,
+            "buy_time": _extract_time(buy_ts), "sell_time": _extract_time(sell_ts),
+            "hold_minutes": _calc_hold_minutes(buy_ts, sell_ts),
+            "reason": "force_close", "return_pct": round(return_pct, 2),
+        })
+
+    # Sort trades by sell_time for chronological display
+    trades.sort(key=lambda t: t.get("sell_time", ""))
 
     win_count = sum(1 for t in trades if t["pnl"] > 0)
     loss_count = sum(1 for t in trades if t["pnl"] < 0)
+    draw_count = sum(1 for t in trades if t["pnl"] == 0)
     total_matched = win_count + loss_count
     win_rate = (win_count / total_matched * 100) if total_matched > 0 else 0.0
 
@@ -75,8 +124,48 @@ def calculate_daily_metrics(events: list[dict], positions: dict) -> dict:
 
     # Per-symbol P&L breakdown
     symbol_pnl: dict[str, float] = defaultdict(float)
+    symbol_trades: dict[str, list[dict]] = defaultdict(list)
     for t in trades:
         symbol_pnl[t["symbol"]] += t["pnl"]
+        symbol_trades[t["symbol"]].append(t)
+
+    # Per-symbol aggregation (count, total_invested, avg return)
+    symbol_stats: dict[str, dict] = {}
+    for sym, sym_trades in symbol_trades.items():
+        count = len(sym_trades)
+        invested = sum(t["buy_price"] * t["quantity"] for t in sym_trades)
+        avg_hold = int(sum(t["hold_minutes"] for t in sym_trades) / count) if count else 0
+        total_ret = sum(t["return_pct"] for t in sym_trades) / count if count else 0.0
+        symbol_stats[sym] = {
+            "count": count, "pnl": symbol_pnl[sym],
+            "invested": invested, "avg_hold": avg_hold,
+            "return_pct": round(total_ret, 2),
+        }
+
+    # Aggregated stats
+    total_invested = sum(t["buy_price"] * t["quantity"] for t in trades)
+    hold_times = [t["hold_minutes"] for t in trades if t["hold_minutes"] > 0]
+    avg_hold_minutes = int(sum(hold_times) / len(hold_times)) if hold_times else 0
+
+    win_pnls = [t["pnl"] for t in trades if t["pnl"] > 0]
+    loss_pnls = [t["pnl"] for t in trades if t["pnl"] < 0]
+    avg_win = int(sum(win_pnls) / len(win_pnls)) if win_pnls else 0
+    avg_loss = int(sum(loss_pnls) / len(loss_pnls)) if loss_pnls else 0
+
+    # Reason breakdown
+    signal_trades = [t for t in trades if t["reason"] == "signal"]
+    fc_trades = [t for t in trades if t["reason"] == "force_close"]
+    reason_breakdown = {
+        "signal": {"count": len(signal_trades), "pnl": sum(t["pnl"] for t in signal_trades)},
+        "force_close": {"count": len(fc_trades), "pnl": sum(t["pnl"] for t in fc_trades)},
+    }
+
+    # Cumulative P&L timeline (for intraday chart)
+    cum_pnl_timeline: list[dict] = []
+    running = 0.0
+    for t in trades:
+        running += t["pnl"]
+        cum_pnl_timeline.append({"time": t["sell_time"], "cum_pnl": running})
 
     return {
         "net_asset": net_asset,
@@ -92,7 +181,18 @@ def calculate_daily_metrics(events: list[dict], positions: dict) -> dict:
         "best_trade_pnl": round(best_trade_pnl, 2),
         "worst_trade_pnl": round(worst_trade_pnl, 2),
         "symbols_traded": symbols_traded,
-        "raw_metrics": {"symbol_pnl": dict(symbol_pnl), "trades": trades},
+        "raw_metrics": {
+            "symbol_pnl": dict(symbol_pnl),
+            "symbol_stats": symbol_stats,
+            "trades": trades,
+            "total_invested": total_invested,
+            "avg_hold_minutes": avg_hold_minutes,
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+            "draw_count": draw_count,
+            "reason_breakdown": reason_breakdown,
+            "cum_pnl_timeline": cum_pnl_timeline,
+        },
     }
 
 

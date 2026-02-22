@@ -41,7 +41,7 @@ def _pct(v: float) -> str:
 
 def _summary_cards(snapshot: ReportSnapshot) -> str:
     return f"""
-    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:24px;">
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:12px; margin-bottom:24px;">
       <div class="summary-card">
         <h3>순자산</h3>
         <div style="font-size:24px; font-weight:700;">\u20a9{snapshot.net_asset:,.0f}</div>
@@ -93,7 +93,7 @@ def build_daily_html(snapshot: ReportSnapshot, history: list[ReportSnapshot]) ->
     chart_section = f"""
     <div class="section">
       <h2>누적 수익률 (최근 {len(chart_history)}일)</h2>
-      <canvas id="cumReturnChart" height="100"></canvas>
+      <canvas id="cumReturnChart" style="max-height:280px;"></canvas>
     </div>"""
 
     chart_js = f"""
@@ -138,10 +138,10 @@ def build_daily_html(snapshot: ReportSnapshot, history: list[ReportSnapshot]) ->
         symbol_table = f"""
     <div class="section">
       <h2>종목별 P&amp;L</h2>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr><th>종목</th><th>P&amp;L</th></tr></thead>
         <tbody>{rows}</tbody>
-      </table>
+      </table></div>
     </div>"""
 
     # Analysis summary
@@ -194,7 +194,7 @@ def build_weekly_html(snapshot: ReportSnapshot) -> str:
     chart_section = f"""
     <div class="section">
       <h2>일별 P&amp;L</h2>
-      <canvas id="dailyPnlChart" height="100"></canvas>
+      <canvas id="dailyPnlChart" style="max-height:280px;"></canvas>
     </div>"""
 
     chart_js = f"""
@@ -243,10 +243,10 @@ def build_weekly_html(snapshot: ReportSnapshot) -> str:
     breakdown_table = f"""
     <div class="section">
       <h2>일별 상세</h2>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr><th>날짜</th><th>P&amp;L</th><th>수익률</th><th>주문</th><th>승/패</th></tr></thead>
         <tbody>{breakdown_rows if breakdown_rows else '<tr><td colspan="5" style="color:var(--text-secondary)">데이터 없음</td></tr>'}</tbody>
-      </table>
+      </table></div>
     </div>"""
 
     period_label = f"{snapshot.period_start} ~ {snapshot.period_end}" if snapshot.period_start else snapshot.period_key
@@ -296,7 +296,7 @@ def build_monthly_html(snapshot: ReportSnapshot) -> str:
     chart_section = f"""
     <div class="section">
       <h2>일별 P&amp;L &amp; 누적 수익률</h2>
-      <canvas id="monthlyChart" height="120"></canvas>
+      <canvas id="monthlyChart" style="max-height:300px;"></canvas>
     </div>"""
 
     chart_js = f"""
@@ -366,10 +366,10 @@ def build_monthly_html(snapshot: ReportSnapshot) -> str:
     breakdown_table = f"""
     <div class="section">
       <h2>일별 상세</h2>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr><th>날짜</th><th>P&amp;L</th><th>수익률</th><th>순자산</th></tr></thead>
         <tbody>{breakdown_rows if breakdown_rows else '<tr><td colspan="4" style="color:var(--text-secondary)">데이터 없음</td></tr>'}</tbody>
-      </table>
+      </table></div>
     </div>"""
 
     period_label = f"{snapshot.period_start} ~ {snapshot.period_end}" if snapshot.period_start else snapshot.period_key
@@ -458,10 +458,10 @@ def _build_calendar_heatmap(daily_breakdown: list[dict], period_key: str) -> str
     return f"""
     <div class="section">
       <h2>캘린더 히트맵</h2>
-      <table style="table-layout:fixed;">
+      <div class="table-wrap"><table style="table-layout:fixed; min-width:320px;">
         <thead><tr>{header}</tr></thead>
         <tbody>{cells}</tbody>
-      </table>
+      </table></div>
     </div>"""
 
 
@@ -489,10 +489,10 @@ def build_market_html(snapshot: ReportSnapshot) -> str:
             indices_section = f"""
     <div class="section">
       <h2>시장 지수</h2>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr><th>지수</th><th>종가</th><th>등락률</th></tr></thead>
         <tbody>{idx_rows}</tbody>
-      </table>
+      </table></div>
     </div>"""
 
     # Sector analysis
@@ -508,10 +508,10 @@ def build_market_html(snapshot: ReportSnapshot) -> str:
             sector_section = f"""
     <div class="section">
       <h2>섹터별 등락률</h2>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr><th>섹터</th><th>등락률</th></tr></thead>
         <tbody>{sec_rows}</tbody>
-      </table>
+      </table></div>
     </div>"""
 
     # Analysis summary

@@ -169,6 +169,27 @@ class EpicUpdate(BaseModel):
     color: str | None = None
 
 
+class DailySnapshot(BaseModel):
+    id: int = 0
+    date: str  # YYYY-MM-DD, unique
+    net_asset: float = 0.0
+    daily_pnl: float = 0.0
+    daily_return_pct: float = 0.0
+    total_signals: int = 0
+    total_orders: int = 0
+    buy_count: int = 0
+    sell_count: int = 0
+    win_count: int = 0
+    loss_count: int = 0
+    win_rate: float = 0.0
+    best_trade_pnl: float = 0.0
+    worst_trade_pnl: float = 0.0
+    symbols_traded: list[str] = Field(default_factory=list)
+    analysis_summary: str = ""
+    raw_metrics: dict = Field(default_factory=dict)
+    created_at: str = Field(default_factory=lambda: _now_iso())
+
+
 class ApprovalRequest(BaseModel):
     feedback: str = ""
 

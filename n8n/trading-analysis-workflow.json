@@ -6,16 +6,43 @@
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 16
+              "triggerAtHour": 16,
+              "triggerAtMinute": 5
             }
           ]
         }
       },
       "id": "cron-trigger",
-      "name": "매일 16:00 트리거",
+      "name": "매일 16:05 트리거",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:9000/api/report-daily",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"date\": \"{{ $now.format('yyyy-MM-dd') }}\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "http-report",
+      "name": "일일 리포트 생성",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
     },
     {
       "parameters": {
@@ -41,7 +68,7 @@
       "name": "트레이딩 분석 요청",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [480, 300]
+      "position": [720, 300]
     },
     {
       "parameters": {
@@ -70,7 +97,7 @@
       "name": "태스크 생성됨?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [720, 300]
+      "position": [960, 300]
     },
     {
       "parameters": {
@@ -90,7 +117,7 @@
       "name": "요약 메시지 생성",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [960, 200]
+      "position": [1200, 200]
     },
     {
       "parameters": {
@@ -110,11 +137,22 @@
       "name": "태스크 없음 메시지",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [960, 420]
+      "position": [1200, 420]
     }
   ],
   "connections": {
-    "매일 16:00 트리거": {
+    "매일 16:05 트리거": {
+      "main": [
+        [
+          {
+            "node": "일일 리포트 생성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "일일 리포트 생성": {
       "main": [
         [
           {

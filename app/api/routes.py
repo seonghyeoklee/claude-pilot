@@ -8,6 +8,7 @@ from datetime import date
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel as _PydanticBase
 from sse_starlette.sse import EventSourceResponse
 
@@ -15,6 +16,7 @@ from app.agent import AgentWorker
 from app.database import Database
 from app.models import (
     ApprovalRequest,
+    DailySnapshot,
     EpicCreate,
     EpicStatus,
     EpicUpdate,
@@ -26,6 +28,7 @@ from app.models import (
     TaskStatus,
     TaskUpdate,
 )
+from app.report_theme import wrap_html
 
 logger = logging.getLogger(__name__)
 
@@ -517,3 +520,287 @@ async def analyze_daily(
         "tasks_created": created_tasks,
         "cost_usd": cost,
     }
+
+
+# ── Daily Trading Report ──
+
+
+class ReportDailyRequest(_PydanticBase):
+    date: str | None = None  # YYYY-MM-DD, defaults to today
+    trading_api_url: str = "http://localhost:8000"
+
+
+def _calculate_metrics(events: list[dict], positions: dict) -> dict:
+    """Calculate trading metrics from journal events and positions."""
+    signals = [e for e in events if e.get("event_type") == "signal"]
+    orders = [e for e in events if e.get("event_type") == "order" and e.get("success")]
+
+    buys = [o for o in orders if o.get("side", "").lower() == "buy"]
+    sells = [o for o in orders if o.get("side", "").lower() == "sell"]
+
+    # FIFO matching per symbol
+    from collections import defaultdict
+
+    buy_queue: dict[str, list[dict]] = defaultdict(list)
+    for b in sorted(buys, key=lambda x: x.get("timestamp", "")):
+        sym = b.get("symbol", "unknown")
+        buy_queue[sym].append(b)
+
+    trades: list[dict] = []
+    for s in sorted(sells, key=lambda x: x.get("timestamp", "")):
+        sym = s.get("symbol", "unknown")
+        if not buy_queue[sym]:
+            continue
+        b = buy_queue[sym].pop(0)
+        buy_price = float(b.get("price", 0))
+        sell_price = float(s.get("price", 0))
+        qty = min(float(b.get("quantity", 0)), float(s.get("quantity", 0)))
+        pnl = (sell_price - buy_price) * qty
+        trades.append({"symbol": sym, "pnl": pnl, "buy_price": buy_price, "sell_price": sell_price, "quantity": qty})
+
+    win_count = sum(1 for t in trades if t["pnl"] > 0)
+    loss_count = sum(1 for t in trades if t["pnl"] < 0)
+    total_matched = win_count + loss_count
+    win_rate = (win_count / total_matched * 100) if total_matched > 0 else 0.0
+
+    pnl_values = [t["pnl"] for t in trades]
+    best_trade_pnl = max(pnl_values) if pnl_values else 0.0
+    worst_trade_pnl = min(pnl_values) if pnl_values else 0.0
+    daily_pnl = sum(pnl_values)
+
+    symbols_traded = sorted(set(o.get("symbol", "unknown") for o in orders)) if orders else []
+
+    # Net asset from positions
+    net_asset = 0.0
+    for market in ("domestic", "us"):
+        mkt = positions.get(market, {})
+        summary = mkt.get("summary", {})
+        net_asset += float(summary.get("net_asset", 0))
+
+    # Per-symbol P&L breakdown
+    symbol_pnl: dict[str, float] = defaultdict(float)
+    for t in trades:
+        symbol_pnl[t["symbol"]] += t["pnl"]
+
+    # Daily return % (from previous snapshot — caller should compute if needed)
+    return {
+        "net_asset": net_asset,
+        "daily_pnl": daily_pnl,
+        "daily_return_pct": 0.0,  # will be computed with prev snapshot
+        "total_signals": len(signals),
+        "total_orders": len(orders),
+        "buy_count": len(buys),
+        "sell_count": len(sells),
+        "win_count": win_count,
+        "loss_count": loss_count,
+        "win_rate": round(win_rate, 2),
+        "best_trade_pnl": round(best_trade_pnl, 2),
+        "worst_trade_pnl": round(worst_trade_pnl, 2),
+        "symbols_traded": symbols_traded,
+        "raw_metrics": {"symbol_pnl": dict(symbol_pnl), "trades": trades},
+    }
+
+
+def _build_report_html(snapshot: DailySnapshot, history: list[DailySnapshot]) -> str:
+    """Build an HTML report page for a daily snapshot."""
+    # Sign helper
+    def _sign(v: float) -> str:
+        return "positive" if v >= 0 else "negative"
+
+    def _fmt(v: float) -> str:
+        sign = "+" if v >= 0 else ""
+        return f"{sign}{v:,.0f}"
+
+    def _pct(v: float) -> str:
+        sign = "+" if v >= 0 else ""
+        return f"{sign}{v:.2f}%"
+
+    # Summary cards
+    cards = f"""
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:24px;">
+      <div class="summary-card">
+        <h3>순자산</h3>
+        <div style="font-size:24px; font-weight:700;">₩{snapshot.net_asset:,.0f}</div>
+      </div>
+      <div class="summary-card">
+        <h3>일일 P&amp;L</h3>
+        <div style="font-size:24px; font-weight:700;" class="{_sign(snapshot.daily_pnl)}">{_fmt(snapshot.daily_pnl)}원</div>
+      </div>
+      <div class="summary-card">
+        <h3>일일 수익률</h3>
+        <div style="font-size:24px; font-weight:700;" class="{_sign(snapshot.daily_return_pct)}">{_pct(snapshot.daily_return_pct)}</div>
+      </div>
+      <div class="summary-card">
+        <h3>승률</h3>
+        <div style="font-size:24px; font-weight:700;">{snapshot.win_rate:.1f}%</div>
+        <div style="font-size:12px; color:var(--text-secondary);">{snapshot.win_count}W / {snapshot.loss_count}L</div>
+      </div>
+      <div class="summary-card">
+        <h3>시그널 / 주문</h3>
+        <div style="font-size:24px; font-weight:700;">{snapshot.total_signals} / {snapshot.total_orders}</div>
+        <div style="font-size:12px; color:var(--text-secondary);">매수 {snapshot.buy_count} / 매도 {snapshot.sell_count}</div>
+      </div>
+      <div class="summary-card">
+        <h3>Best / Worst</h3>
+        <div style="font-size:16px;"><span class="positive">{_fmt(snapshot.best_trade_pnl)}</span> / <span class="negative">{_fmt(snapshot.worst_trade_pnl)}</span></div>
+      </div>
+    </div>"""
+
+    # Cumulative return chart data (oldest first)
+    chart_history = list(reversed(history))
+    chart_labels = [s.date for s in chart_history]
+    chart_returns = []
+    cumulative = 0.0
+    for s in chart_history:
+        cumulative += s.daily_return_pct
+        chart_returns.append(round(cumulative, 4))
+
+    import json as _json
+
+    chart_labels_json = _json.dumps(chart_labels)
+    chart_data_json = _json.dumps(chart_returns)
+
+    chart_section = f"""
+    <div class="section">
+      <h2>누적 수익률 (최근 {len(chart_history)}일)</h2>
+      <canvas id="cumReturnChart" height="100"></canvas>
+    </div>"""
+
+    chart_js = f"""
+    const ctx = document.getElementById('cumReturnChart').getContext('2d');
+    new Chart(ctx, {{
+      type: 'line',
+      data: {{
+        labels: {chart_labels_json},
+        datasets: [{{
+          label: '누적 수익률 (%)',
+          data: {chart_data_json},
+          borderColor: '#58a6ff',
+          backgroundColor: 'rgba(88,166,255,0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+        }}]
+      }},
+      options: {{
+        responsive: true,
+        plugins: {{
+          legend: {{ labels: {{ color: '#e5e7eb' }} }},
+        }},
+        scales: {{
+          x: {{ ticks: {{ color: '#9ca3af' }}, grid: {{ color: 'rgba(255,255,255,0.05)' }} }},
+          y: {{
+            ticks: {{ color: '#9ca3af', callback: v => v + '%' }},
+            grid: {{ color: 'rgba(255,255,255,0.05)' }},
+          }}
+        }}
+      }}
+    }});"""
+
+    # Symbol P&L table
+    symbol_pnl = snapshot.raw_metrics.get("symbol_pnl", {})
+    rows = ""
+    for sym, pnl in sorted(symbol_pnl.items(), key=lambda x: x[1], reverse=True):
+        rows += f'<tr><td>{sym}</td><td class="{_sign(pnl)}">{_fmt(pnl)}원</td></tr>\n'
+
+    symbol_table = f"""
+    <div class="section">
+      <h2>종목별 P&amp;L</h2>
+      <table>
+        <thead><tr><th>종목</th><th>P&amp;L</th></tr></thead>
+        <tbody>{rows if rows else '<tr><td colspan="2" style="color:var(--text-secondary)">거래 없음</td></tr>'}</tbody>
+      </table>
+    </div>""" if symbol_pnl or not rows else ""
+
+    # Analysis summary
+    analysis_section = ""
+    if snapshot.analysis_summary:
+        analysis_section = f"""
+    <div class="section">
+      <h2>분석 요약</h2>
+      <p style="color:var(--text-secondary); line-height:1.7;">{snapshot.analysis_summary}</p>
+    </div>"""
+
+    body = f"""
+    <div class="container">
+      <header>
+        <h1>Daily Trading Report</h1>
+        <p>{snapshot.date}</p>
+      </header>
+      {cards}
+      {chart_section}
+      {symbol_table}
+      {analysis_section}
+      <footer>Claude Pilot &mdash; Daily Trading Report</footer>
+    </div>"""
+
+    return wrap_html(
+        f"Trading Report — {snapshot.date}",
+        body,
+        include_chartjs=True,
+        extra_js=chart_js,
+    )
+
+
+@router.post("/api/report-daily")
+async def report_daily(
+    body: ReportDailyRequest | None = None,
+    db: Database = Depends(_get_db),
+):
+    req = body or ReportDailyRequest()
+    target_date = req.date or date.today().isoformat()
+    trading_url = req.trading_api_url.rstrip("/")
+
+    # 1. Fetch journal + positions concurrently
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            journal_task = client.get(f"{trading_url}/trading/journal/{target_date}")
+            positions_task = client.get(f"{trading_url}/trading/positions")
+            journal_resp, positions_resp = await asyncio.gather(journal_task, positions_task)
+    except httpx.ConnectError:
+        raise HTTPException(502, f"Cannot connect to trading platform at {trading_url}")
+    except httpx.RequestError as exc:
+        raise HTTPException(502, f"Trading platform request failed: {exc}")
+
+    # Parse journal events
+    events: list[dict] = []
+    if journal_resp.status_code == 200:
+        journal_data = journal_resp.json()
+        events = journal_data.get("events") or journal_data.get("trades") or journal_data.get("entries") or []
+
+    # Parse positions
+    positions: dict = {}
+    if positions_resp.status_code == 200:
+        positions = positions_resp.json()
+
+    # 2. Calculate metrics
+    metrics = _calculate_metrics(events, positions)
+
+    # Compute daily_return_pct from previous snapshot
+    snapshots = await db.list_snapshots(limit=2)
+    prev = next((s for s in snapshots if s.date != target_date), None)
+    if prev and prev.net_asset > 0 and metrics["net_asset"] > 0:
+        metrics["daily_return_pct"] = round(
+            (metrics["net_asset"] - prev.net_asset) / prev.net_asset * 100, 4
+        )
+
+    # 3. Upsert snapshot
+    snapshot = await db.upsert_snapshot(target_date, metrics)
+
+    return snapshot.model_dump()
+
+
+@router.get("/api/reports/{report_date}")
+async def get_report_html(report_date: str, db: Database = Depends(_get_db)):
+    snapshot = await db.get_snapshot(report_date)
+    if not snapshot:
+        raise HTTPException(404, "No report found for this date")
+    history = await db.list_snapshots(limit=30)
+    html = _build_report_html(snapshot, history)
+    return HTMLResponse(html)
+
+
+@router.get("/api/reports")
+async def list_reports(limit: int = 30, db: Database = Depends(_get_db)):
+    snapshots = await db.list_snapshots(limit=limit)
+    return [s.model_dump() for s in snapshots]

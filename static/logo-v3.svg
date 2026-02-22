@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <!-- Background -->
+  <rect x="1" y="1" width="38" height="38" rx="10" fill="#1a1b23" stroke="#30363d" stroke-width="1"/>
+  <!-- Angle brackets < > like code -->
+  <path d="M15 14 L9 20 L15 26" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M25 14 L31 20 L25 26" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Upward arrow (pilot/navigation) in center -->
+  <path d="M20 12 L20 28" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+  <path d="M16 16 L20 12 L24 16" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

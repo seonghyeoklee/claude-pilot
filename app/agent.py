@@ -222,7 +222,7 @@ class AgentWorker:
         branch_name = ""
 
         # ── Gitflow: create feature branch ──
-        if self.config.gitflow and not cwd_override:
+        if self.config.gitflow:
             branch_name = await self._create_branch(task_id, title) or ""
             if not branch_name:
                 self._tasks_failed += 1

@@ -478,7 +478,17 @@ async def analyze_daily(
     summary = _extract_summary(analysis)
     task_items = analysis.get("tasks", [])
 
-    # 4. Create tasks in DB
+    # 4. Delete existing tasks for same date, then create new ones
+    existing = await db.list_tasks(label="trading-analysis")
+    date_tag = f"[Auto-generated from {target_date} trading analysis]"
+    deleted_count = 0
+    for t in existing:
+        if date_tag in t.description:
+            await db.delete_task(t.id)
+            deleted_count += 1
+    if deleted_count:
+        logger.info("Replaced %d existing trading-analysis tasks for %s", deleted_count, target_date)
+
     created_tasks = []
     for item in task_items:
         title = item.get("title", "")

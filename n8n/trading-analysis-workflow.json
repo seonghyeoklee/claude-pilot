@@ -1,0 +1,167 @@
+{
+  "name": "Daily Trading Analysis",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 16
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "매일 16:00 트리거",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:9000/api/analyze-daily",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"date\": \"{{ $now.format('yyyy-MM-dd') }}\"\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "http-analyze",
+      "name": "트레이딩 분석 요청",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-tasks",
+              "leftValue": "={{ $json.tasks_created.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-tasks-created",
+      "name": "태스크 생성됨?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary",
+              "name": "summary",
+              "value": "=📊 {{ $json.date }} 트레이딩 분석 완료\n\n거래 수: {{ $json.trade_count }}\n생성 태스크: {{ $json.tasks_created.length }}개\n비용: ${{ $json.cost_usd || 0 }}\n\n{{ $json.analysis_summary }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-summary",
+      "name": "요약 메시지 생성",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "no-tasks",
+              "name": "summary",
+              "value": "=📊 {{ $json.date }} 트레이딩 분석 완료 — 개선 태스크 없음\n\n거래 수: {{ $json.trade_count }}\n\n{{ $json.analysis_summary }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-no-tasks",
+      "name": "태스크 없음 메시지",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [960, 420]
+    }
+  ],
+  "connections": {
+    "매일 16:00 트리거": {
+      "main": [
+        [
+          {
+            "node": "트레이딩 분석 요청",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "트레이딩 분석 요청": {
+      "main": [
+        [
+          {
+            "node": "태스크 생성됨?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "태스크 생성됨?": {
+      "main": [
+        [
+          {
+            "node": "요약 메시지 생성",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "태스크 없음 메시지",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [
+    {
+      "name": "trading"
+    }
+  ]
+}
